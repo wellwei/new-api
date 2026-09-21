@@ -92,6 +92,9 @@ const (
 	ErrorCodeModelRateLimited       ErrorCode = "model_rate_limited"
 	ErrorCodeContentPolicyViolation ErrorCode = "content_policy_violation"
 	ErrorCodeUpstreamUnavailable    ErrorCode = "upstream_unavailable"
+	// ErrorCodeConcurrencyLimitExceeded is local: the caller already has the
+	// maximum number of requests in flight for its group.
+	ErrorCodeConcurrencyLimitExceeded ErrorCode = "concurrency_limit_exceeded"
 )
 
 type NewAPIError struct {
@@ -175,6 +178,10 @@ func (e *NewAPIError) ClientCategory() ClientErrorCategory {
 		return ClientErrInsufficientQuota
 	case ErrorCodeModelNotFound:
 		return ClientErrModelUnavailable
+	case ErrorCodeConcurrencyLimitExceeded:
+		// Local throttling by the caller's own in-flight ceiling: the next step
+		// is to wait for a slot, same class as an upstream 429.
+		return ClientErrRateLimited
 	case ErrorCodeCountTokenFailed, ErrorCodeSensitiveWordsDetected,
 		ErrorCodeViolationFeeGrokCSAM, ErrorCodePromptBlocked:
 		return ClientErrContentBlocked

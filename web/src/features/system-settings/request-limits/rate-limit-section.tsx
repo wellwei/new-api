@@ -66,6 +66,26 @@ const isValidJSON = (value: string | undefined) => {
   }
 }
 
+// isValidGroupCeilingJSON accepts the per-group in-flight ceilings: a JSON
+// object of group name to positive integer, with no arrays allowed (the shape
+// differs from the request-rate limits above, which carry a pair per group).
+const isValidGroupCeilingJSON = (value: string | undefined) => {
+  if (!value || value.trim() === '') return true
+  try {
+    const parsed = JSON.parse(value)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return false
+    }
+    for (const [, val] of Object.entries(parsed)) {
+      if (typeof val !== 'number' || !Number.isInteger(val)) return false
+      if (val < 1 || val > 100000) return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
 const createRateLimitSchema = (t: (key: string) => string) =>
   z.object({
     ModelRequestRateLimitEnabled: z.boolean(),
@@ -76,6 +96,13 @@ const createRateLimitSchema = (t: (key: string) => string) =>
       .string()
       .optional()
       .refine(isValidJSON, {
+        message: t('Invalid JSON format or values out of allowed range'),
+      }),
+    UserConcurrencyLimitEnabled: z.boolean(),
+    UserConcurrencyLimitGroup: z
+      .string()
+      .optional()
+      .refine(isValidGroupCeilingJSON, {
         message: t('Invalid JSON format or values out of allowed range'),
       }),
   })
@@ -313,6 +340,72 @@ export function RateLimitSection({ defaultValues }: RateLimitSectionProps) {
                     </div>
                   </FormDescription>
                 )}
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='UserConcurrencyLimitEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Enable per-user concurrency limit')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Caps how many relay requests one user may have in flight at once. A request that arrives with every slot in use is rejected with 429; it is never queued. Groups not listed below are unrestricted, and operators are exempt.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='UserConcurrencyLimitGroup'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Group concurrency limits')}</FormLabel>
+                <FormControl>
+                  <JsonCodeEditor
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    textareaRef={field.ref}
+                    placeholder={`{\n  "default": 1,\n  "vip": 5\n}`}
+                    aria-invalid={Boolean(
+                      form.formState.errors.UserConcurrencyLimitGroup
+                    )}
+                  />
+                </FormControl>
+                <FormDescription>
+                  <div className='space-y-1 text-xs'>
+                    <p className='font-semibold'>{t('Format:')}</p>
+                    <ul className='list-inside list-disc space-y-0.5 pl-2'>
+                      <li>
+                        {t('JSON object:')} {`{"groupName": maxInFlight}`}
+                      </li>
+                      <li>
+                        {t('Example:')} {`{"default": 1, "vip": 5}`}
+                      </li>
+                      <li>{t('maxInFlight ≥ 1, ≤ 100,000')}</li>
+                      <li>
+                        {t(
+                          'Resolved with the user\u2019s own group, so a token pointed at another group cannot raise the ceiling'
+                        )}
+                      </li>
+                    </ul>
+                  </div>
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}

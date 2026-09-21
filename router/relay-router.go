@@ -64,7 +64,7 @@ func SetRelayRouter(router *gin.Engine) {
 	playgroundRouter := router.Group("/pg")
 	playgroundRouter.Use(middleware.RouteTag("relay"))
 	playgroundRouter.Use(middleware.SystemPerformanceCheck())
-	playgroundRouter.Use(middleware.UserAuth(), middleware.Distribute())
+	playgroundRouter.Use(middleware.UserAuth(), middleware.UserConcurrencyLimit(), middleware.Distribute())
 	// Registered after auth so the caller's role is known: the playground is a
 	// panel entry point, and a non-operator using it sees the model it asked for.
 	playgroundRouter.Use(middleware.ResponseModelProjection())
@@ -84,6 +84,11 @@ func SetRelayRouter(router *gin.Engine) {
 		relayV1Router.GET("/responses", controller.ResponsesWebSocket)
 	}
 	relayV1Router.Use(middleware.ModelRequestRateLimit())
+	// One relay request occupies one in-flight slot for its user, held until the
+	// response is finished. The Responses WebSocket above is registered before
+	// this point and reserves per response.create event instead, in the session's
+	// own engine.
+	relayV1Router.Use(middleware.UserConcurrencyLimit())
 	// Every /v1 response passes the projection, so a non-operator caller reads
 	// the model it requested and never the one internal routing chose.
 	relayV1Router.Use(middleware.ResponseModelProjection())
@@ -206,6 +211,7 @@ func SetRelayRouter(router *gin.Engine) {
 	relayGeminiRouter.Use(middleware.SystemPerformanceCheck())
 	relayGeminiRouter.Use(middleware.TokenAuth())
 	relayGeminiRouter.Use(middleware.ModelRequestRateLimit())
+	relayGeminiRouter.Use(middleware.UserConcurrencyLimit())
 	relayGeminiRouter.Use(middleware.Distribute())
 	relayGeminiRouter.Use(middleware.ResponseModelProjection())
 	{
@@ -218,7 +224,7 @@ func SetRelayRouter(router *gin.Engine) {
 
 func registerMjRouterGroup(relayMjRouter *gin.RouterGroup) {
 	relayMjRouter.GET("/image/:id", relay.RelayMidjourneyImage)
-	relayMjRouter.Use(middleware.TokenAuth(), middleware.Distribute())
+	relayMjRouter.Use(middleware.TokenAuth(), middleware.UserConcurrencyLimit(), middleware.Distribute())
 	{
 		relayMjRouter.POST("/submit/action", controller.RelayMidjourney)
 		relayMjRouter.POST("/submit/shorten", controller.RelayMidjourney)

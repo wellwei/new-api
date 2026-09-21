@@ -244,6 +244,9 @@ const (
 const (
 	MsgRateLimitReached      = "rate_limit.reached"
 	MsgRateLimitTotalReached = "rate_limit.total_reached"
+	// MsgConcurrencyLimitReached is shown when one user already has the maximum
+	// number of requests in flight for their group. .Max is the ceiling.
+	MsgConcurrencyLimitReached = "rate_limit.concurrency_reached"
 )
 
 // Setting related messages
