@@ -1,12 +1,16 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/types"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // The contract these tests protect: whatever an upstream says, the client sees
@@ -178,6 +182,35 @@ func TestClientMessageWithoutLocalizerIsStillSafe(t *testing.T) {
 // defaultTestBuilder restores the wiring other tests expect.
 func defaultTestBuilder(category types.ClientErrorCategory, err *types.NewAPIError) string {
 	return ""
+}
+
+// A JSON decoder error names Go types; a validation error names the caller's
+// fields. Only the second is worth passing along, and the two must not be
+// confused — they share an error code.
+func TestDecodeErrorsAreRewordedButValidationErrorsAreNot(t *testing.T) {
+	types.SetClientMessageBuilder(nil)
+	defer types.SetClientMessageBuilder(defaultTestBuilder)
+
+	// Shaped exactly like encoding/json's own output.
+	var target struct {
+		Messages []int `json:"messages"`
+	}
+	decodeErr := json.Unmarshal([]byte(`{"messages":"not-an-array"}`), &target)
+	require.Error(t, decodeErr)
+	var typeErr *json.UnmarshalTypeError
+	require.ErrorAs(t, decodeErr, &typeErr, "fixture must produce a decoder error")
+
+	apiErr := types.NewErrorWithStatusCode(decodeErr, types.ErrorCodeInvalidRequest, http.StatusBadRequest)
+	msg := ClientMessageFor("en", "", apiErr)
+	for _, internal := range []string{"Go struct field", "UnmarshalTypeError", "[]int", "json:"} {
+		assert.NotContains(t, msg, internal, "decoder internals leaked: %q", msg)
+	}
+
+	// A validation error describes the caller's request and keeps its text.
+	validationErr := types.NewErrorWithStatusCode(
+		errors.New("field messages is required"), types.ErrorCodeInvalidRequest, http.StatusBadRequest)
+	assert.Contains(t, ClientMessageFor("en", "", validationErr), "messages",
+		"a validation error must still say which field to fix")
 }
 
 // The 404 narrowing must depend on the model table, not on the error text, and

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
@@ -48,12 +50,45 @@ func ClientMessageFor(lang, modelName string, err *types.NewAPIError) string {
 	}
 	category := err.ClientCategory()
 	if !err.IsUpstreamOrigin() && category == types.ClientErrInvalidRequest {
+		if isDecodeError(err) {
+			// A JSON decoder error names Go types and struct fields
+			// (`json: cannot unmarshal string into Go struct field
+			// ***.messages of type []***.Message`). That is this service's
+			// internals, not the caller's request, so it is replaced.
+			if msg := translate(lang, modelName, i18n.MsgRelayInvalidRequest); msg != "" {
+				return msg
+			}
+			return err.ClientMessage()
+		}
 		return err.MaskSensitiveError()
 	}
 	key, ok := clientMessageKeys[category]
 	if !ok {
 		return err.ClientMessage()
 	}
+	if msg := translate(lang, modelName, key); msg != "" {
+		return msg
+	}
+	return err.ClientMessage()
+}
+
+// isDecodeError reports whether the failure came from the JSON decoder rather
+// than from this gateway's own validation. The distinction matters because the
+// two deserve different treatment: a decoder error talks about Go types, while
+// a validation error talks about the caller's own fields ("field messages is
+// required") and is the single most useful thing to pass along.
+func isDecodeError(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	return errors.As(err, &syntaxErr) || errors.As(err, &typeErr)
+}
+
+// translate renders a catalogue entry with the caller's model name, returning
+// "" when the catalogue cannot answer.
+func translate(lang, modelName, key string) string {
 	args := map[string]any{}
 	if modelName != "" {
 		args["Model"] = modelName
@@ -61,7 +96,7 @@ func ClientMessageFor(lang, modelName string, err *types.NewAPIError) string {
 	if msg := i18n.Translate(lang, key, args); msg != "" && msg != key {
 		return msg
 	}
-	return err.ClientMessage()
+	return ""
 }
 
 // ClientErrorMessage renders the message a client should receive.
