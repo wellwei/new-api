@@ -47,14 +47,14 @@ func Distribute() func(c *gin.Context) {
 		service.AppendTaskPluginIdentityFilter(c, c.GetString("expected_task_plugin_key"))
 		modelRequest, shouldSelectChannel, err := getModelRequest(c)
 		if err != nil {
-			// The caller's request did not parse. Say so, and keep it a
-			// client-side error: this is the one failure the caller can fix by
-			// changing what they sent. The detail stays out of the message
-			// because a JSON decoder's error names Go types, not JSON fields.
+			// The caller's request did not parse. Log what actually went wrong
+			// (the log is where the diagnostic lives), then answer with wording
+			// the caller can act on: a JSON decoder's message names Go types,
+			// not JSON fields.
+			logger.LogError(c.Request.Context(), fmt.Sprintf("request parse failed: %s", err.Error()))
 			abortWithOpenAiMessage(c, http.StatusBadRequest,
 				i18n.T(c, i18n.MsgRelayInvalidRequest),
 				types.ErrorCodeInvalidRequest)
-			logger.LogError(c.Request.Context(), fmt.Sprintf("request parse failed: %s", err.Error()))
 			return
 		}
 		_, pinned, _ := constraints.ResolvedPin()
@@ -247,6 +247,13 @@ func pinnedEndpointCandidateForChannel(c *gin.Context, channel *model.Channel, e
 // - application/json
 // - application/x-www-form-urlencoded
 // - multipart/form-data
+// getModelFromRequest reads the caller's model name from the request body.
+//
+// Failures are returned with their diagnostic text intact ("invalid JSON
+// request body", "model must be provided once"). Wording them for a caller is
+// the job of whoever answers the request — doing it here would destroy the
+// detail the log needs, because the client-facing text has no room for a JSON
+// decoder's explanation.
 func getModelFromRequest(c *gin.Context) (*ModelRequest, error) {
 	if cached, exists := c.Get(contextKeyTaskPluginEndpointModel); exists {
 		if modelRequest, ok := cached.(ModelRequest); ok {
@@ -255,17 +262,12 @@ func getModelFromRequest(c *gin.Context) (*ModelRequest, error) {
 		}
 	}
 	if strings.HasPrefix(c.Request.Header.Get("Content-Type"), "application/json") {
-		modelRequest, err := getModelFromJSONBody(c)
-		if err != nil {
-			return nil, errors.New(i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
-		}
-		return modelRequest, nil
+		return getModelFromJSONBody(c)
 	}
 
 	var modelRequest ModelRequest
-	err := common.UnmarshalBodyReusable(c, &modelRequest)
-	if err != nil {
-		return nil, errors.New(i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
+	if err := common.UnmarshalBodyReusable(c, &modelRequest); err != nil {
+		return nil, err
 	}
 	return &modelRequest, nil
 }
