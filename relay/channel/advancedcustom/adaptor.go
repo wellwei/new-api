@@ -372,6 +372,10 @@ func (a *Adaptor) resolve(c *gin.Context, info *relaycommon.RelayInfo) error {
 	return fmt.Errorf("advanced custom channel does not support request path %s for model %s", incomingPath, info.OriginModelName)
 }
 
+// incomingRequestPath returns the request path the channel's routes are matched
+// against: the live request path when there is one, otherwise the relay info
+// snapshot. Alias entry points are reconciled by the route matcher itself, so
+// the path is returned as received.
 func incomingRequestPath(c *gin.Context, info *relaycommon.RelayInfo) string {
 	if c != nil && c.Request != nil && c.Request.URL != nil {
 		return c.Request.URL.Path

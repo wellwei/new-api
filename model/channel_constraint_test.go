@@ -216,3 +216,42 @@ func TestChannelSatisfiesFilters(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, dto.FilterRequestPath, kind)
 }
+
+// The playground posts to its own alias path, which no channel can declare.
+// Route filtering must judge the channel on the public path that alias stands
+// for, otherwise every advanced-custom channel is invisible in the playground.
+func TestChannelSatisfiesFiltersPlaygroundAlias(t *testing.T) {
+	custom := &Channel{Id: 900020, Type: constant.ChannelTypeAdvancedCustom}
+	custom.SetOtherSettings(kitdto.ChannelOtherSettings{
+		AdvancedCustom: &kitdto.AdvancedCustomConfig{
+			Routes: []kitdto.AdvancedCustomRoute{{
+				IncomingPath: "/v1/chat/completions",
+				Models:       []string{"gpt-4"},
+			}},
+		},
+	})
+
+	ok, kind := ChannelSatisfiesFilters(custom, "gpt-4", []dto.ChannelFilter{{
+		Kind:        dto.FilterRequestPath,
+		RequestPath: "/pg/chat/completions",
+	}})
+	require.True(t, ok)
+	assert.Equal(t, dto.ChannelFilterKind(""), kind)
+
+	// A model the alias route does not serve is still rejected.
+	ok, kind = ChannelSatisfiesFilters(custom, "gpt-5", []dto.ChannelFilter{{
+		Kind:        dto.FilterRequestPath,
+		RequestPath: "/pg/chat/completions",
+	}})
+	assert.False(t, ok)
+	assert.Equal(t, dto.FilterRequestPath, kind)
+
+	// A path the channel does not declare stays rejected through the alias —
+	// normalization must not turn every alias into a wildcard.
+	ok, kind = ChannelSatisfiesFilters(custom, "gpt-4", []dto.ChannelFilter{{
+		Kind:        dto.FilterRequestPath,
+		RequestPath: "/pg/responses",
+	}})
+	assert.False(t, ok)
+	assert.Equal(t, dto.FilterRequestPath, kind)
+}

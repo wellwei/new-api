@@ -298,6 +298,115 @@ func TestAdvancedCustomValidateDuplicateIncomingPathRequiresCatchAllLast(t *test
 	assert.Contains(t, err.Error(), "catch-all route must be last")
 }
 
+func TestNormalizeRequestPath(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "playground chat completes to public chat", path: "/pg/chat/completions", want: "/v1/chat/completions"},
+		{name: "query string is preserved", path: "/pg/chat/completions?x=1", want: "/v1/chat/completions?x=1"},
+		{name: "public path is unchanged", path: "/v1/chat/completions", want: "/v1/chat/completions"},
+		{name: "gemini surface is unchanged", path: "/v1beta/models/gemini-2.5-flash:generateContent", want: "/v1beta/models/gemini-2.5-flash:generateContent"},
+		{name: "lookalike prefix is unchanged", path: "/pgx/chat/completions", want: "/pgx/chat/completions"},
+		{name: "empty path is unchanged", path: "", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, NormalizeRequestPath(tt.path))
+		})
+	}
+}
+
+func TestIsPlaygroundPath(t *testing.T) {
+	assert.True(t, IsPlaygroundPath("/pg/chat/completions"))
+	assert.False(t, IsPlaygroundPath("/v1/chat/completions"))
+	assert.False(t, IsPlaygroundPath("/pgx/chat/completions"))
+	assert.False(t, IsPlaygroundPath("/pg"))
+}
+
+// The playground posts to an alias path that no channel declaration can
+// usefully name. Route matching must judge it as the public path it stands for,
+// in both directions: a route declaring the public path serves a playground
+// request, and a route declaring the alias (a manual DB workaround) is still
+// found from the public surface.
+func TestAdvancedCustomMatchPathForModelPlaygroundAlias(t *testing.T) {
+	publicRoute := AdvancedCustomRoute{
+		IncomingPath: "/v1/chat/completions",
+		UpstreamPath: "/v1/chat/completions",
+		Models:       []string{"gpt-4o"},
+	}
+	aliasRoute := AdvancedCustomRoute{
+		IncomingPath: "/pg/chat/completions",
+		UpstreamPath: "/v1/chat/completions",
+		Models:       []string{"gpt-4o"},
+	}
+
+	tests := []struct {
+		name        string
+		routes      []AdvancedCustomRoute
+		requestPath string
+		wantPath    string
+		wantMatch   bool
+	}{
+		{
+			name:        "public route serves playground request",
+			routes:      []AdvancedCustomRoute{publicRoute},
+			requestPath: "/pg/chat/completions",
+			wantPath:    "/v1/chat/completions",
+			wantMatch:   true,
+		},
+		{
+			name:        "public path still matches public route",
+			routes:      []AdvancedCustomRoute{publicRoute},
+			requestPath: "/v1/chat/completions",
+			wantPath:    "/v1/chat/completions",
+			wantMatch:   true,
+		},
+		{
+			name:        "alias route declared in config still matches playground request",
+			routes:      []AdvancedCustomRoute{aliasRoute},
+			requestPath: "/pg/chat/completions",
+			wantPath:    "/pg/chat/completions",
+			wantMatch:   true,
+		},
+		{
+			name:        "alias route is reachable from the public surface too",
+			routes:      []AdvancedCustomRoute{aliasRoute},
+			requestPath: "/v1/chat/completions",
+			wantPath:    "/pg/chat/completions",
+			wantMatch:   true,
+		},
+		{
+			name:        "unrelated public path does not match",
+			routes:      []AdvancedCustomRoute{publicRoute},
+			requestPath: "/pg/responses",
+			wantMatch:   false,
+		},
+		{
+			name:        "playground alias does not match a different model",
+			routes:      []AdvancedCustomRoute{publicRoute},
+			requestPath: "/pg/chat/completions",
+			wantMatch:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &AdvancedCustomConfig{Routes: tt.routes}
+			model := "gpt-4o"
+			if tt.name == "playground alias does not match a different model" {
+				model = "gpt-5"
+			}
+			route, ok := config.MatchPathForModel(tt.requestPath, model)
+			assert.Equal(t, tt.wantMatch, ok)
+			if tt.wantMatch {
+				assert.Equal(t, tt.wantPath, route.IncomingPath)
+			}
+		})
+	}
+}
+
 func TestAdvancedCustomMatchPathForModel(t *testing.T) {
 	config := &AdvancedCustomConfig{
 		Routes: []AdvancedCustomRoute{

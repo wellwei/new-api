@@ -631,11 +631,13 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		info.RelayMode = c.GetInt("relay_mode")
 	}
 
-	if strings.HasPrefix(c.Request.URL.Path, "/pg") {
+	if dto.IsPlaygroundPath(c.Request.URL.Path) {
 		info.IsPlayground = true
-		info.RequestURLPath = strings.TrimPrefix(info.RequestURLPath, "/pg")
-		info.RequestURLPath = "/v1" + info.RequestURLPath
 	}
+	// The playground alias is rewritten to the public path it stands for, so
+	// upstream URL construction and every downstream route lookup see the public
+	// surface. The live request keeps its own path (logs still show /pg/...).
+	info.RequestURLPath = dto.NormalizeRequestPath(info.RequestURLPath)
 
 	userSetting, ok := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting)
 	if ok {

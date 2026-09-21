@@ -239,6 +239,7 @@ func TestInitChannelMetaAppliesAdvancedCustomRoutePassThrough(t *testing.T) {
 		channelType     int
 		channelSetting  dto.ChannelSettings
 		model           string
+		path            string
 		wantPassThrough bool
 		wantEffort      string
 	}{
@@ -271,12 +272,24 @@ func TestInitChannelMetaAppliesAdvancedCustomRoutePassThrough(t *testing.T) {
 			wantPassThrough: false,
 			wantEffort:      "high",
 		},
+		{
+			name:            "playground alias resolves the public route",
+			channelType:     constant.ChannelTypeAdvancedCustom,
+			model:           "native-model",
+			path:            "/pg/chat/completions",
+			wantPassThrough: true,
+			wantEffort:      "",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			path := tt.path
+			if path == "" {
+				path = "/v1/chat/completions"
+			}
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+			ctx.Request = httptest.NewRequest("POST", path, nil)
 			ctx.Set("original_model", tt.model)
 			common.SetContextKey(ctx, constant.ContextKeyChannelType, tt.channelType)
 			common.SetContextKey(ctx, constant.ContextKeyChannelSetting, tt.channelSetting)

@@ -184,6 +184,47 @@ func TestAdaptorReturnsErrorWhenNoRouteMatchesPath(t *testing.T) {
 	assert.Contains(t, err.Error(), "does not support request path")
 }
 
+// The playground posts to /pg/chat/completions, an alias no channel can usefully
+// declare. Route resolution must judge it as the public path it stands for, both
+// from the live request path and from the relay info snapshot.
+func TestAdaptorResolvesPlaygroundAliasPath(t *testing.T) {
+	config := &dto.AdvancedCustomConfig{
+		Routes: []dto.AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/chat/completions",
+				UpstreamPath: "https://upstream.example/v1/chat/completions",
+				Converter:    relayconvert.ConverterNone,
+			},
+		},
+	}
+
+	// The snapshot path is what GetRequestURL resolves against (it passes no
+	// gin context), and GenRelayInfo rewrites the alias there.
+	adaptor := &Adaptor{}
+	info := advancedCustomRelayInfo(config)
+	info.RequestURLPath = dto.NormalizeRequestPath("/pg/chat/completions")
+
+	requestURL, err := adaptor.GetRequestURL(info)
+	require.NoError(t, err)
+	assert.Contains(t, requestURL, "upstream.example/v1/chat/completions")
+
+	// A live playground request resolves through the same route even when the
+	// snapshot still holds the alias, because matching canonicalizes both sides.
+	liveAdaptor := &Adaptor{}
+	liveInfo := advancedCustomRelayInfo(config)
+	liveInfo.RequestURLPath = "/pg/chat/completions"
+	require.NoError(t, liveAdaptor.resolve(advancedCustomGinContext("/pg/chat/completions"), liveInfo))
+	assert.Equal(t, relayconvert.ConverterNone, liveAdaptor.converter)
+
+	// The alias is not a wildcard: an undeclared path still fails to resolve.
+	unmatched := &Adaptor{}
+	unmatchedInfo := advancedCustomRelayInfo(config)
+	unmatchedInfo.RequestURLPath = "/pg/responses"
+	err = unmatched.resolve(advancedCustomGinContext("/pg/responses"), unmatchedInfo)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not support request path")
+}
+
 func TestAdaptorReplacesModelPlaceholderInRouteURL(t *testing.T) {
 	adaptor := &Adaptor{}
 	info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{

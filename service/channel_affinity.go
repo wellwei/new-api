@@ -555,7 +555,9 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 	}
 	path := ""
 	if c != nil && c.Request != nil && c.Request.URL != nil {
-		path = c.Request.URL.Path
+		// Affinity path rules are written against the public relay surface; an
+		// alias entry point (the playground) is matched as the path it stands for.
+		path = dto.NormalizeRequestPath(c.Request.URL.Path)
 	}
 	userAgent := ""
 	if c != nil && c.Request != nil {

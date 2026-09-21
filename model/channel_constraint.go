@@ -97,6 +97,8 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 			return true
 		}
 		config := ch.GetOtherSettings().AdvancedCustom
+		// Routes are declared against the public relay surface, so an alias
+		// entry point (the playground) is matched as the path it stands for.
 		return config != nil && config.SupportsPathForModel(filter.RequestPath, modelName)
 	case dto.FilterTaskPluginIdentity:
 		if filter.TaskPluginKey == "" {

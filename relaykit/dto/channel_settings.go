@@ -228,6 +228,27 @@ func (r AdvancedCustomRoute) IsNative() bool {
 	return converter == "" || converter == advancedCustomConverterNone
 }
 
+// The playground is an alias entry point: /pg/chat/completions speaks the same
+// protocol as the public /v1/chat/completions path, for every channel type. It is
+// served by the panel's own route group, so a channel cannot usefully declare it,
+// and routing decisions must judge it as the public path it stands for.
+const playgroundPathPrefix = "/pg/"
+
+// IsPlaygroundPath reports whether path belongs to the playground alias group.
+func IsPlaygroundPath(path string) bool {
+	return strings.HasPrefix(path, playgroundPathPrefix)
+}
+
+// NormalizeRequestPath maps alias entry points onto the public relay path they
+// stand for. Paths already on the public surface — and any other surface, such as
+// Gemini's /v1beta — are returned unchanged.
+func NormalizeRequestPath(path string) string {
+	if !IsPlaygroundPath(path) {
+		return path
+	}
+	return "/v1/" + strings.TrimPrefix(path, playgroundPathPrefix)
+}
+
 // MatchPath returns the first route whose IncomingPath matches requestPath.
 // Matching mirrors the relay adaptor: exact match, {model} placeholder, and
 // :generateContent <-> :streamGenerateContent equivalence.
@@ -399,7 +420,16 @@ func matchAdvancedCustomRouteModelRule(rule string, model string) bool {
 	return re != nil && re.MatchString(model)
 }
 
+// matchAdvancedCustomIncomingPath reports whether a configured incoming path
+// serves a request path. Besides the literal rule, both sides are compared on
+// their canonical spelling, so an alias entry point (the playground) matches the
+// public path it stands for, and a route that declares the alias still matches.
 func matchAdvancedCustomIncomingPath(configuredPath string, requestPath string) bool {
+	return matchAdvancedCustomIncomingPathExact(configuredPath, requestPath) ||
+		matchAdvancedCustomIncomingPathExact(NormalizeRequestPath(configuredPath), NormalizeRequestPath(requestPath))
+}
+
+func matchAdvancedCustomIncomingPathExact(configuredPath string, requestPath string) bool {
 	if matchAdvancedCustomIncomingPathTemplate(configuredPath, requestPath) {
 		return true
 	}
