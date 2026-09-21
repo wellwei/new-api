@@ -47,7 +47,14 @@ func Distribute() func(c *gin.Context) {
 		service.AppendTaskPluginIdentityFilter(c, c.GetString("expected_task_plugin_key"))
 		modelRequest, shouldSelectChannel, err := getModelRequest(c)
 		if err != nil {
-			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
+			// The caller's request did not parse. Say so, and keep it a
+			// client-side error: this is the one failure the caller can fix by
+			// changing what they sent. The detail stays out of the message
+			// because a JSON decoder's error names Go types, not JSON fields.
+			abortWithOpenAiMessage(c, http.StatusBadRequest,
+				i18n.T(c, i18n.MsgRelayInvalidRequest),
+				types.ErrorCodeInvalidRequest)
+			logger.LogError(c.Request.Context(), fmt.Sprintf("request parse failed: %s", err.Error()))
 			return
 		}
 		_, pinned, _ := constraints.ResolvedPin()
@@ -59,7 +66,7 @@ func Distribute() func(c *gin.Context) {
 				s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
 				if !ok {
 					// token model limit is empty, all models are not allowed
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
+					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess), types.ErrorCodeAccessDenied)
 					return
 				}
 				var tokenModelLimit map[string]bool
@@ -68,14 +75,14 @@ func Distribute() func(c *gin.Context) {
 					tokenModelLimit = map[string]bool{}
 				}
 				if !TokenModelLimitAllows(tokenModelLimit, modelRequest.Model) {
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
+					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}), types.ErrorCodeAccessDenied)
 					return
 				}
 			}
 
 			if shouldSelectChannel {
 				if modelRequest.Model == "" {
-					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
+					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired), types.ErrorCodeInvalidRequest)
 					return
 				}
 				// check path is /pg/chat/completions
@@ -84,7 +91,8 @@ func Distribute() func(c *gin.Context) {
 					playgroundRequest := &dto.PlayGroundRequest{}
 					err = common.UnmarshalBodyReusable(c, playgroundRequest)
 					if err != nil {
-						abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidPlayground, map[string]any{"Error": err.Error()}))
+						logger.LogError(c.Request.Context(), fmt.Sprintf("playground request parse failed: %s", err.Error()))
+						abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidPlayground), types.ErrorCodeInvalidRequest)
 						return
 					}
 					if playgroundRequest.Group != "" {
