@@ -72,6 +72,13 @@ func GetLocalizer(lang string) *i18n.Localizer {
 		return loc
 	}
 
+	// A localizer built on an uninitialised bundle panics when it localizes.
+	// Translation is best-effort everywhere it is used, so an uninitialised
+	// catalogue yields nil and let Translate fall back to the message key.
+	if bundle == nil {
+		return nil
+	}
+
 	// Create new localizer for unknown language (fallback to default)
 	mu.Lock()
 	defer mu.Unlock()
@@ -95,6 +102,11 @@ func T(c *gin.Context, key string, args ...map[string]any) string {
 // Translate translates a message key for the specified language
 func Translate(lang, key string, args ...map[string]any) string {
 	loc := GetLocalizer(lang)
+	if loc == nil {
+		// Catalogue not initialised: callers treat a key echoed back as
+		// "no translation", which is what an uninitialised catalogue means.
+		return key
+	}
 
 	config := &i18n.LocalizeConfig{
 		MessageID: key,

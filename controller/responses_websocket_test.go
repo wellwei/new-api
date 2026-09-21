@@ -804,13 +804,23 @@ func TestResponsesWebSocketCancelErrorDoesNotFinishActiveRequest(t *testing.T) {
 }
 
 func TestResponsesWebSocketInitialUpstreamRejectionRefundsReservation(t *testing.T) {
+	// The upstream's own wording never reaches the caller: these bodies say
+	// things only the upstream's operator cares about ("Invalid input",
+	// "upstream rejected"), so the frame carries the curated category message
+	// instead. The status also becomes what the caller should do about it — the
+	// upstream saw the request this gateway built, so its 4xx is attributed to
+	// the gateway (502) rather than blamed on the caller.
+	//
+	// The exact wording depends on whether a localizer is installed (this test
+	// does not install one; a sibling test does), so assert on the contract
+	// rather than on one translation.
 	for _, tc := range []struct {
-		name, upstream, wantType, wantMessage string
-		status                                int
+		name, upstream string
+		status         int
 	}{
-		{name: "structured error", upstream: `{"type":"error","response_id":"rejected","status":400,"error":{"type":"invalid_request_error","code":"invalid_input","message":"Invalid input"}}`, status: http.StatusBadRequest, wantType: "invalid_request_error", wantMessage: "Invalid input"},
+		{name: "structured error", upstream: `{"type":"error","response_id":"rejected","status":400,"error":{"type":"invalid_request_error","code":"invalid_input","message":"Invalid input"}}`, status: http.StatusBadGateway},
 		// A frame without an error object is still reported as a request error.
-		{name: "bare error", upstream: `{"type":"error","status":500,"message":"upstream rejected"}`, status: http.StatusInternalServerError, wantType: "invalid_request_error", wantMessage: "upstream rejected"},
+		{name: "bare error", upstream: `{"type":"error","status":500,"message":"upstream rejected"}`, status: http.StatusBadGateway},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			preConsumed := make(chan int, 1)
@@ -847,8 +857,14 @@ func TestResponsesWebSocketInitialUpstreamRejectionRefundsReservation(t *testing
 			assert.Equal(t, "error", rejection["type"])
 			assert.Equal(t, float64(tc.status), rejection["status"])
 			rejectionError, _ := rejection["error"].(map[string]any)
-			assert.Equal(t, tc.wantType, rejectionError["type"])
-			assert.Equal(t, tc.wantMessage, rejectionError["message"])
+			assert.Equal(t, "upstream_unavailable", rejectionError["type"])
+			// The upstream's wording must not survive into the frame.
+			message, _ := rejectionError["message"].(string)
+			for _, upstreamText := range []string{"Invalid input", "upstream rejected", "invalid_request_error"} {
+				assert.NotContains(t, message, upstreamText,
+					"upstream wording %q leaked to the client", upstreamText)
+			}
+			assert.NotEmpty(t, message, "the client must get an explanation, not silence")
 			assert.Equal(t, 2000, <-preConsumed, "the rejected request reserved quota before contacting upstream")
 			deadline := time.NewTimer(3 * time.Second)
 			defer deadline.Stop()
@@ -994,15 +1010,19 @@ func TestResponsesStreamOutcomesPreserveAccounting(t *testing.T) {
 }
 
 func TestResponsesHTTPHealthCountsFinalResult(t *testing.T) {
+	// firstStatus is the upstream's status; wantStatus is what the caller sees.
+	// An upstream rejection is reported as a gateway failure, since the
+	// upstream saw the request this gateway built — except for a 5xx that the
+	// retry budget turns into a success.
 	for _, tc := range []struct {
-		name, code            string
-		firstStatus, attempts int
-		success               bool
-		ignored               bool
+		name, code                        string
+		firstStatus, wantStatus, attempts int
+		success                           bool
+		ignored                           bool
 	}{
-		{"business rejection", "context_length_exceeded", 400, 1, false, true},
-		{"credentials rejected as 400", "invalid_api_key", 400, 1, false, false},
-		{"retry succeeds", "server_error", 500, 2, true, false},
+		{"business rejection", "context_length_exceeded", 400, http.StatusBadGateway, 1, false, true},
+		{"credentials rejected as 400", "invalid_api_key", 400, http.StatusBadGateway, 1, false, false},
+		{"retry succeeds", "server_error", 500, http.StatusOK, 2, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := newResponsesWSBillingTest(t, `tier("request", fixed(0.002))`, func(*websocket.Conn, *http.Request) {})
@@ -1038,7 +1058,7 @@ func TestResponsesHTTPHealthCountsFinalResult(t *testing.T) {
 			fixture.closeAndWait(t)
 			assert.Equal(t, int64(tc.attempts), attempts.Load())
 			if !tc.success {
-				assert.Equal(t, tc.firstStatus, response.StatusCode)
+				assert.Equal(t, tc.wantStatus, response.StatusCode)
 			} else {
 				assert.Equal(t, http.StatusOK, response.StatusCode)
 			}

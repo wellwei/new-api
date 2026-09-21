@@ -86,6 +86,15 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
+	// Everything built below comes from the upstream response body, so the text
+	// may name the upstream host, account or its internal model id. Mark the
+	// error once here; the client-facing paths replace that text with a
+	// curated message, while logs and retry decisions keep the real cause.
+	defer func() {
+		if newApiErr != nil {
+			newApiErr.MarkUpstreamOrigin()
+		}
+	}()
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {

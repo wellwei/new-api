@@ -103,6 +103,10 @@ type responsesWSSession struct {
 	unregister    func()
 	stateMu       sync.Mutex
 	current       *responsesWSCallState
+	// clientLanguage is resolved once from the request and used for the curated
+	// error messages this session writes back, so the frames it sends read in
+	// the same language the caller asked for.
+	clientLanguage string
 
 	// These fields belong to the serial request worker and describe the actual
 	// established connection. Per-request token/user data is never stored here.
@@ -119,7 +123,8 @@ type responsesWSSession struct {
 func ResponsesWebSocketHelper(c *gin.Context, client *websocket.Conn, runner ResponsesWSRequestRunner) *types.NewAPIError {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	s := &responsesWSSession{ctx: ctx, cancel: cancel, client: client, runner: runner,
-		request: c.Request.Clone(ctx), requestID: c.GetString(common.RequestIdKey)}
+		request: c.Request.Clone(ctx), requestID: c.GetString(common.RequestIdKey),
+		clientLanguage: i18n.GetLangFromContext(c)}
 	if s.requestID == "" {
 		s.requestID = common.NewRequestId()
 	}
@@ -186,7 +191,7 @@ func (s *responsesWSSession) runRequest(state *responsesWSCallState, message []b
 		// the current request's release; socket close needs neither lock.
 		outgoing := state.terminal
 		if apiErr != nil {
-			if body, err := buildResponsesWSErrorPayload(envelope.EventID, streamID, apiErr); err == nil {
+			if body, err := buildResponsesWSErrorPayload(envelope.EventID, streamID, apiErr, s.clientLanguage); err == nil {
 				outgoing = &responsesWSMessage{kind: websocket.TextMessage, body: body}
 			}
 		}
@@ -436,7 +441,11 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 						// rejected request; keep the client-facing type stable.
 						rejection.Error = &types.OpenAIError{Type: "invalid_request_error", Message: event.Message, Code: event.Code}
 					}
-					rejected := types.WithOpenAIError(*rejection.Error, rejection.Status, types.ErrOptionWithSkipRetry())
+					// The frame came from upstream, so its message is the upstream's
+					// wording. Mark it: the client-facing serialiser replaces that
+					// text with the curated message for the category.
+					rejected := types.WithOpenAIError(*rejection.Error, rejection.Status,
+						types.ErrOptionWithSkipRetry(), types.ErrOptionWithUpstreamOrigin())
 					if rejected.StatusCode < 400 || rejected.StatusCode > 599 {
 						rejected.StatusCode = http.StatusBadRequest
 					}
@@ -712,7 +721,7 @@ func (s *responsesWSSession) sendError(eventID, streamID string, apiErr *types.N
 	if apiErr == nil {
 		return
 	}
-	payload, err := buildResponsesWSErrorPayload(eventID, streamID, apiErr)
+	payload, err := buildResponsesWSErrorPayload(eventID, streamID, apiErr, s.clientLanguage)
 	if err == nil {
 		_ = s.writeClient(websocket.TextMessage, payload)
 	}
@@ -870,15 +879,21 @@ func buildResponsesWSCreateEvent(jsonData []byte, generate common.RawMessage, st
 	return common.Marshal(event)
 }
 
-func buildResponsesWSErrorPayload(eventID, streamID string, apiErr *types.NewAPIError) ([]byte, error) {
+// buildResponsesWSErrorPayload renders one error frame. The message is the
+// curated one for the error's category — never the upstream's own text — and
+// the status describes the failure honestly (a model this gateway does not
+// serve is a 404, not a 503 the caller will keep retrying).
+func buildResponsesWSErrorPayload(eventID, streamID string, apiErr *types.NewAPIError, lang string) ([]byte, error) {
 	if apiErr == nil {
 		return nil, errors.New("api error is nil")
 	}
-	status := apiErr.StatusCode
-	if status == 0 {
-		status = http.StatusInternalServerError
+	status := apiErr.ClientStatusCode()
+	errType := string(apiErr.ClientErrorCode())
+	openaiErr := types.OpenAIError{
+		Message: service.ClientMessageFor(lang, "", apiErr),
+		Type:    errType,
+		Code:    errType,
 	}
-	openaiErr := apiErr.ToOpenAIError()
 	return common.Marshal(&responsesWSErrorEvent{
 		Type:     "error",
 		Status:   status,

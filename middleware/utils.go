@@ -3,7 +3,6 @@ package middleware
 import (
 	"fmt"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
@@ -23,16 +22,38 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 		Message:    message,
 		StatusCode: statusCode,
 	}) {
-		c.JSON(statusCode, gin.H{
-			"error": gin.H{
-				"message": common.MessageWithRequestId(message, c.GetString(common.RequestIdKey)),
-				"type":    "new_api_error",
-				"code":    codeStr,
-			},
-		})
+		// A caller on the Anthropic protocol expects {"type":"error","error":…};
+		// its SDKs surface anything else as an opaque failure. The message itself
+		// is already localised and free of upstream detail by the caller.
+		if IsClaudeShapedRequest(c) {
+			c.JSON(statusCode, gin.H{
+				"type": "error",
+				"error": gin.H{
+					"type":    codeStr,
+					"message": message,
+				},
+			})
+		} else {
+			c.JSON(statusCode, gin.H{
+				"error": gin.H{
+					"message": message,
+					"type":    "new_api_error",
+					"code":    codeStr,
+				},
+			})
+		}
 	}
 	c.Abort()
 	logger.LogError(c.Request.Context(), fmt.Sprintf("user %d | %s", userId, message))
+}
+
+// IsClaudeShapedRequest reports whether the request arrived on the Anthropic
+// messages endpoint, which uses its own error envelope.
+func IsClaudeShapedRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	return c.Request.URL.Path == "/v1/messages"
 }
 
 func abortWithMidjourneyMessage(c *gin.Context, statusCode int, code int, description string) {

@@ -188,10 +188,13 @@ func TestDistributeHidesTaskPluginDetailsButLogsDiagnostics(t *testing.T) {
 	t.Cleanup(func() { common.MemoryCacheEnabled = previousCacheEnabled })
 
 	const group = "private-plugin-error-test-group"
+	// The client is told the model is unavailable, and nothing about why the
+	// gateway behind it cannot serve the call — no plugin key, no group name,
+	// no internal component name. The operator gets the detail in the log.
 	for _, locale := range []struct{ language, message string }{
-		{"en", "No available channel for model task-model under group " + group + ": the model is claimed by a task plugin, which has no enabled channel serving it (distributor)"},
-		{"zh-CN", "分组 " + group + " 下模型 task-model 无可用渠道：该模型由任务插件认领，但当前没有启用的渠道可服务此模型（distributor）"},
-		{"zh-TW", "分組 " + group + " 下模型 task-model 無可用管道：該模型由任務插件認領，但目前沒有啟用的管道可服務此模型（distributor）"},
+		{"en", `The model "task-model" is currently unavailable. Please try again later or use a different model.`},
+		{"zh-CN", "暂无可用的「task-model」模型，请稍后重试或改用其他模型。"},
+		{"zh-TW", "暫無可用的「task-model」模型，請稍後重試或改用其他模型。"},
 	} {
 		for _, providerCount := range []int{1, 2} {
 			t.Run(fmt.Sprintf("%s/%d_providers", locale.language, providerCount), func(t *testing.T) {
@@ -241,9 +244,16 @@ func TestDistributeHidesTaskPluginDetailsButLogsDiagnostics(t *testing.T) {
 				require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 				requestID := recorder.Header().Get(common.RequestIdKey)
 				require.NotEmpty(t, requestID)
+				// No request id in the body: the client's next step does not
+				// depend on it, and it is one less internal handle in the wild.
 				assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":"new_api_error","code":"model_not_found"}}`,
-					locale.message+" (request id: "+requestID+")"), recorder.Body.String())
+					locale.message), recorder.Body.String())
 				assert.NotContains(t, recorder.Body.String(), "disable or override")
+				// Nothing about how this gateway is built may reach the caller.
+				for _, internal := range []string{"distributor", "channel", "plugin", "group", group} {
+					assert.NotContains(t, recorder.Body.String(), internal,
+						"client response must not mention internal concept %q", internal)
+				}
 				for _, key := range keys {
 					assert.NotContains(t, recorder.Body.String(), key)
 					assert.Contains(t, logs.String(), key)

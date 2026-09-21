@@ -3,10 +3,11 @@ package middleware
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,23 +16,14 @@ func SystemPerformanceCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 仅检查 Relay 接口 (/v1, /v1beta 等)
 		// 这里简单判断路径前缀，可以根据实际路由调整
-		path := c.Request.URL.Path
-		if strings.HasPrefix(path, "/v1/messages") {
-			if err := checkSystemPerformance(); err != nil {
-				c.JSON(err.StatusCode, gin.H{
-					"error": err.ToClaudeError(),
-				})
-				c.Abort()
-				return
-			}
-		} else {
-			if err := checkSystemPerformance(); err != nil {
-				c.JSON(err.StatusCode, gin.H{
-					"error": err.ToOpenAIError(),
-				})
-				c.Abort()
-				return
-			}
+		// The overload thresholds are operator detail; the caller is told only
+		// that the service is unavailable right now. RespondClientError also
+		// picks the envelope the request's protocol expects.
+		if err := checkSystemPerformance(); err != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("system performance check failed: %s", err.Error()))
+			service.RespondClientError(c, err)
+			c.Abort()
+			return
 		}
 		c.Next()
 	}

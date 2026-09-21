@@ -54,6 +54,25 @@ func GetEnabledModels() []string {
 	return models
 }
 
+// IsModelEnabled reports whether any enabled channel serves this model, in any
+// group. Callers use it to tell "this gateway does not offer the model" — a
+// permanent 404 for the caller — from "the model exists but has no capacity
+// right now", which is transient and worth retrying.
+//
+// It answers conservatively when the database is not available: reporting the
+// model as present keeps the caller on the retryable path rather than telling
+// them a model they may well be using is gone.
+func IsModelEnabled(modelName string) bool {
+	if modelName == "" || DB == nil {
+		return true
+	}
+	var count int64
+	DB.Table("abilities").
+		Where("model = ? and enabled = ?", modelName, true).
+		Count(&count)
+	return count > 0
+}
+
 func GetAllEnableAbilities() []Ability {
 	var abilities []Ability
 	DB.Find(&abilities, "enabled = ?", true)

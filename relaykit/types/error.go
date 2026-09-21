@@ -85,6 +85,13 @@ const (
 	// quota error
 	ErrorCodeInsufficientUserQuota      ErrorCode = "insufficient_user_quota"
 	ErrorCodePreConsumeTokenQuotaFailed ErrorCode = "pre_consume_token_quota_failed"
+
+	// client-facing error codes. These are what a client sees after upstream
+	// text has been replaced by a curated message; they are stable so a client
+	// can branch on them.
+	ErrorCodeModelRateLimited       ErrorCode = "model_rate_limited"
+	ErrorCodeContentPolicyViolation ErrorCode = "content_policy_violation"
+	ErrorCodeUpstreamUnavailable    ErrorCode = "upstream_unavailable"
 )
 
 type NewAPIError struct {
@@ -96,6 +103,13 @@ type NewAPIError struct {
 	errorCode      ErrorCode
 	StatusCode     int
 	Metadata       json.RawMessage
+	// upstreamOrigin marks an error whose message was taken from an upstream
+	// response body. Its text is diagnostic (it may name the upstream host,
+	// account or internal model id) and must never reach a client verbatim;
+	// ClientCategory uses this to route it to a curated message instead.
+	// Local errors (validation, quota, routing) carry no upstream text and are
+	// safe to describe precisely.
+	upstreamOrigin bool
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -118,6 +132,90 @@ func (e *NewAPIError) GetErrorType() ErrorType {
 		return ""
 	}
 	return e.errorType
+}
+
+// IsUpstreamOrigin reports whether this error carries text taken from an
+// upstream response. Callers that print to a client must not do so verbatim.
+func (e *NewAPIError) IsUpstreamOrigin() bool {
+	return e != nil && e.upstreamOrigin
+}
+
+// MarkUpstreamOrigin records that this error's message came from an upstream
+// response body. See NewAPIError.upstreamOrigin.
+func (e *NewAPIError) MarkUpstreamOrigin() {
+	if e != nil {
+		e.upstreamOrigin = true
+	}
+}
+
+// ClientErrorCategory is the client-facing class of a failure. It is derived
+// from the status code and error code only, never from the message text, so a
+// curated message can replace upstream wording without changing behaviour.
+type ClientErrorCategory string
+
+const (
+	ClientErrInsufficientQuota ClientErrorCategory = "insufficient_quota"
+	ClientErrModelUnavailable  ClientErrorCategory = "model_unavailable"
+	ClientErrRateLimited       ClientErrorCategory = "rate_limited"
+	ClientErrInvalidRequest    ClientErrorCategory = "invalid_request"
+	ClientErrContentBlocked    ClientErrorCategory = "content_blocked"
+	ClientErrUpstream          ClientErrorCategory = "upstream_error"
+	ClientErrInternal          ClientErrorCategory = "internal_error"
+)
+
+// ClientCategory classifies the error for a client-facing response.
+func (e *NewAPIError) ClientCategory() ClientErrorCategory {
+	if e == nil {
+		return ClientErrInternal
+	}
+	// Local errors first: their text is precise, and the gateway knows exactly
+	// what it rejected.
+	switch e.errorCode {
+	case ErrorCodeInsufficientUserQuota, ErrorCodePreConsumeTokenQuotaFailed:
+		return ClientErrInsufficientQuota
+	case ErrorCodeModelNotFound:
+		return ClientErrModelUnavailable
+	case ErrorCodeCountTokenFailed, ErrorCodeSensitiveWordsDetected,
+		ErrorCodeViolationFeeGrokCSAM, ErrorCodePromptBlocked:
+		return ClientErrContentBlocked
+	case ErrorCodeReadRequestBodyFailed, ErrorCodeConvertRequestFailed,
+		ErrorCodeBadRequestBody, ErrorCodeInvalidRequest, ErrorCodeInvalidApiType:
+		return ClientErrInvalidRequest
+	}
+	if IsChannelError(e) || e.errorCode == ErrorCodeChannelNoAvailableKey ||
+		e.errorCode == ErrorCodeChannelInvalidKey {
+		return ClientErrUpstream
+	}
+	// An upstream rejection is attributed to the upstream even when it looks
+	// like a client mistake. The request the upstream saw is the one this
+	// gateway built from the caller's, so a 400 there may well be a conversion
+	// fault — telling the caller to fix a request that was fine sends them the
+	// wrong way. The one exception is throttling, which has a next step the
+	// caller can act on (retry, or switch models).
+	if e.upstreamOrigin {
+		switch e.StatusCode {
+		case http.StatusRequestTimeout, http.StatusTooManyRequests:
+			return ClientErrRateLimited
+		case http.StatusNotFound, http.StatusMethodNotAllowed:
+			return ClientErrModelUnavailable
+		default:
+			return ClientErrUpstream
+		}
+	}
+	switch e.StatusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return ClientErrRateLimited
+	case http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+		return ClientErrInvalidRequest
+	case http.StatusForbidden:
+		return ClientErrInsufficientQuota
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		return ClientErrModelUnavailable
+	}
+	if e.StatusCode >= 500 || e.StatusCode == 0 {
+		return ClientErrUpstream
+	}
+	return ClientErrInternal
 }
 
 func (e *NewAPIError) Error() string {
@@ -237,6 +335,70 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 		result.Message = string(e.errorType)
 	}
 	return result
+}
+
+// ClientStatusCode is the status a client should receive. It mirrors the relay
+// status except where that status would mislead: an upstream 4xx is not the
+// caller's bad request (the gateway built that request), so it is reported as
+// a gateway failure, and a model this gateway does not serve is a 404 rather
+// than a 503 the caller would keep retrying.
+func (e *NewAPIError) ClientStatusCode() int {
+	if e == nil {
+		return http.StatusInternalServerError
+	}
+	status := e.StatusCode
+	if status < 100 || status > 599 {
+		status = http.StatusInternalServerError
+	}
+	switch e.ClientCategory() {
+	case ClientErrModelUnavailable:
+		// Keep what the caller was given: "no available channel" arrives as a
+		// 503 for both a model that does not exist and one that exists with no
+		// capacity right now, and this layer cannot tell them apart. The host
+		// narrows a genuinely absent model to 404 where it can consult the
+		// model table (see service.PrepareClientError).
+		return status
+	case ClientErrUpstream:
+		return http.StatusBadGateway
+	}
+	return status
+}
+
+// ClientErrorCode is the stable, non-leaking code a client can branch on.
+func (e *NewAPIError) ClientErrorCode() ErrorCode {
+	switch e.ClientCategory() {
+	case ClientErrInsufficientQuota:
+		return ErrorCodeInsufficientUserQuota
+	case ClientErrModelUnavailable:
+		return ErrorCodeModelNotFound
+	case ClientErrRateLimited:
+		return ErrorCodeModelRateLimited
+	case ClientErrInvalidRequest:
+		return ErrorCodeInvalidRequest
+	case ClientErrContentBlocked:
+		return ErrorCodeContentPolicyViolation
+	default:
+		return ErrorCodeUpstreamUnavailable
+	}
+}
+
+// ToClientOpenAIError renders the error for an OpenAI-shaped client: curated
+// message, stable code, no upstream text or identity.
+func (e *NewAPIError) ToClientOpenAIError() OpenAIError {
+	code := e.ClientErrorCode()
+	return OpenAIError{
+		Message: e.ClientMessage(),
+		Type:    string(ErrorTypeNewAPIError),
+		Code:    code,
+	}
+}
+
+// ToClientClaudeError renders the error for an Anthropic-shaped client.
+func (e *NewAPIError) ToClientClaudeError() ClaudeError {
+	return ClaudeError{
+		Message: e.ClientMessage(),
+		Type:    string(e.ClientErrorCode()),
+	}
 }
 
 type NewAPIErrorOptions func(*NewAPIError)
@@ -381,6 +543,50 @@ func IsSkipRetryError(err *NewAPIError) bool {
 func ErrOptionWithSkipRetry() NewAPIErrorOptions {
 	return func(e *NewAPIError) {
 		e.skipRetry = true
+	}
+}
+
+// ErrOptionWithUpstreamOrigin marks the error as carrying upstream response
+// text. See NewAPIError.upstreamOrigin.
+func ErrOptionWithUpstreamOrigin() NewAPIErrorOptions {
+	return func(e *NewAPIError) {
+		e.upstreamOrigin = true
+	}
+}
+
+// clientMessageBuilder is installed by the host module (which owns the i18n
+// catalogue and the gin context). relaykit stays free of both: it classifies,
+// the host words the message.
+var clientMessageBuilder func(category ClientErrorCategory, err *NewAPIError) string
+
+// SetClientMessageBuilder installs the localizer for client-facing messages.
+func SetClientMessageBuilder(fn func(category ClientErrorCategory, err *NewAPIError) string) {
+	clientMessageBuilder = fn
+}
+
+// ClientMessage returns the message a client should see: the localizer's text
+// when installed, and category-independent wording otherwise, so an unset
+// builder can never leak upstream text.
+func (e *NewAPIError) ClientMessage() string {
+	category := e.ClientCategory()
+	if clientMessageBuilder != nil {
+		if msg := clientMessageBuilder(category, e); msg != "" {
+			return msg
+		}
+	}
+	switch category {
+	case ClientErrInsufficientQuota:
+		return "insufficient account quota, please top up and retry"
+	case ClientErrModelUnavailable:
+		return "the requested model is not available"
+	case ClientErrRateLimited:
+		return "the model is rate limited right now, please retry later or switch to another model"
+	case ClientErrInvalidRequest:
+		return "the request is invalid"
+	case ClientErrContentBlocked:
+		return "the request was rejected by the content policy"
+	default:
+		return "the service is temporarily unavailable, please retry later"
 	}
 }
 

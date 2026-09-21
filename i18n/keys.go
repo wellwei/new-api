@@ -333,6 +333,22 @@ const (
 	MsgDistributorInvalidParseModel            = "distributor.invalid_request_parse_model"
 )
 
+// Relayed client-facing error messages.
+//
+// These replace whatever the upstream said. The rule they exist for: a client
+// is told what kind of failure it hit and what to do about it, and learns
+// nothing about how this gateway is built behind that (no upstream host, no
+// account, no internal model id, no channel). Keep them actionable and free of
+// internal detail.
+const (
+	MsgRelayModelUnavailable  = "relay.model_unavailable"
+	MsgRelayRateLimited       = "relay.rate_limited"
+	MsgRelayInsufficientQuota = "relay.insufficient_quota"
+	MsgRelayInvalidRequest    = "relay.invalid_request"
+	MsgRelayContentBlocked    = "relay.content_blocked"
+	MsgRelayUpstream          = "relay.upstream_unavailable"
+)
+
 // Custom OAuth provider related messages
 const (
 	MsgCustomOAuthNotFound          = "custom_oauth.not_found"
