@@ -123,7 +123,7 @@ func Distribute() func(c *gin.Context) {
 					// two cannot disagree.
 					if narrowed := service.ModelUnavailableStatus(modelRequest.Model, status); narrowed != status {
 						status = narrowed
-						message = i18n.T(c, i18n.MsgRelayModelUnavailable, map[string]any{"Model": modelRequest.Model})
+						message = i18n.T(c, i18n.MsgRelayModelNotServed, map[string]any{"Model": modelRequest.Model})
 					}
 				} else if selectErr.MessageID != "" {
 					message = i18n.T(c, selectErr.MessageID, selectErr.Params)

@@ -294,6 +294,7 @@ custom_oauth.binding_not_found: "OAuth 绑定不存在"
 custom_oauth.provider_id_field_invalid: "无法从提供商响应中提取用户 ID"
 
 # Relayed client-facing error messages
+relay.model_not_served: "本服务不提供「{{.Model}}」这个模型，请改用其他模型。"
 relay.model_unavailable: "暂无可用的「{{.Model}}」模型，请稍后重试或改用其他模型。"
 relay.rate_limited: "「{{.Model}}」当前请求受限（模型额度或频率已用尽），请稍后重试，或改用其他模型。"
 relay.insufficient_quota: "账户额度不足，请充值后重试。"

@@ -342,6 +342,7 @@ const (
 // internal detail.
 const (
 	MsgRelayModelUnavailable  = "relay.model_unavailable"
+	MsgRelayModelNotServed    = "relay.model_not_served"
 	MsgRelayRateLimited       = "relay.rate_limited"
 	MsgRelayInsufficientQuota = "relay.insufficient_quota"
 	MsgRelayInvalidRequest    = "relay.invalid_request"

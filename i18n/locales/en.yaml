@@ -293,6 +293,7 @@ custom_oauth.binding_not_found: "OAuth binding not found"
 custom_oauth.provider_id_field_invalid: "Could not extract user ID from provider response"
 
 # Relayed client-facing error messages
+relay.model_not_served: "This service does not offer the model \"{{.Model}}\". Please use a different model."
 relay.model_unavailable: "The requested model is currently unavailable. Please try again later or use a different model."
 relay.rate_limited: "This model is temporarily rate limited. Please try again later, or switch to another model."
 relay.insufficient_quota: "Insufficient quota for this request. Please top up your account and try again."

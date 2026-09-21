@@ -106,17 +106,45 @@ func PrepareClientError(c *gin.Context, err *types.NewAPIError) *types.NewAPIErr
 // own status and corrects the one case that misleads callers: "no available
 // channel" is 503 when the model exists but has no capacity right now (retry
 // later), and 404 when this gateway does not serve the model at all (asking
-// again will never help — switch models or fix the name).
+// again will never help — switch models).
 func clientStatusFor(c *gin.Context, err *types.NewAPIError) int {
 	status := err.ClientStatusCode()
 	if err.ClientCategory() != types.ClientErrModelUnavailable {
 		return status
 	}
-	modelName := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
-	if modelName == "" {
-		modelName = c.GetString("original_model")
+	narrowed := ModelUnavailableStatus(contextModelName(c), status)
+	if narrowed == http.StatusNotFound && status != http.StatusNotFound {
+		// The status now says "this model does not exist here", so the message
+		// must stop suggesting a retry — a caller told to retry a model that
+		// will never resolve learns the wrong lesson.
+		err.SetMessage(catalogMessage(c, i18n.MsgRelayModelNotServed))
 	}
-	return ModelUnavailableStatus(modelName, status)
+	return narrowed
+}
+
+// contextModelName returns the model the caller asked for (never the one this
+// gateway resolved it to).
+func contextModelName(c *gin.Context) string {
+	if name := common.GetContextKeyString(c, constant.ContextKeyOriginalModel); name != "" {
+		return name
+	}
+	if c == nil {
+		return ""
+	}
+	return c.GetString("original_model")
+}
+
+// catalogMessage renders a catalogue entry with the caller's model name.
+func catalogMessage(c *gin.Context, key string) string {
+	args := map[string]any{}
+	if model := contextModelName(c); model != "" {
+		args["Model"] = model
+	}
+	msg := common.TranslateMessage(c, key, args)
+	if msg == "" || msg == key {
+		return ""
+	}
+	return msg
 }
 
 // ModelUnavailableStatus resolves the status for a model that could not be
