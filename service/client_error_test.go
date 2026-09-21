@@ -179,3 +179,26 @@ func TestClientMessageWithoutLocalizerIsStillSafe(t *testing.T) {
 func defaultTestBuilder(category types.ClientErrorCategory, err *types.NewAPIError) string {
 	return ""
 }
+
+// The 404 narrowing must depend on the model table, not on the error text, and
+// must stay retryable whenever it cannot tell.
+func TestModelUnavailableStatusNarrowing(t *testing.T) {
+	const unreachable = http.StatusServiceUnavailable
+
+	// No model name to check: keep the retryable status rather than guess.
+	if got := ModelUnavailableStatus("", unreachable); got != unreachable {
+		t.Errorf("empty model name: got %d, want %d", got, unreachable)
+	}
+
+	// A model the table does not know is definitively absent.
+	if got := ModelUnavailableStatus("definitely-not-a-served-model", unreachable); got != http.StatusNotFound {
+		t.Errorf("unknown model: got %d, want %d", got, http.StatusNotFound)
+	}
+
+	// The narrowing only ever turns 503 into 404; other statuses pass through.
+	for _, status := range []int{http.StatusBadRequest, http.StatusForbidden, http.StatusTooManyRequests} {
+		if got := ModelUnavailableStatus("definitely-not-a-served-model", status); got != status {
+			t.Errorf("status %d must pass through unchanged, got %d", status, got)
+		}
+	}
+}

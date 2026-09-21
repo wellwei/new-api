@@ -112,12 +112,23 @@ func Distribute() func(c *gin.Context) {
 					logTaskPluginChannelDecision(c, selectErr.Channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
 				}
 				message := selectErr.Message
+				status := selectErr.StatusCode
 				if selectErr.NoAvailableChannel {
 					message = noAvailableChannelMessage(c, usingGroup, modelRequest.Model)
+					// "No available channel" covers two situations the caller
+					// should act on differently: a model this gateway does not
+					// serve at all will never work by retrying (404), while a
+					// model that exists with no capacity right now is worth
+					// retrying (503). Shared with the relay error path so the
+					// two cannot disagree.
+					if narrowed := service.ModelUnavailableStatus(modelRequest.Model, status); narrowed != status {
+						status = narrowed
+						message = i18n.T(c, i18n.MsgRelayModelUnavailable, map[string]any{"Model": modelRequest.Model})
+					}
 				} else if selectErr.MessageID != "" {
 					message = i18n.T(c, selectErr.MessageID, selectErr.Params)
 				}
-				abortWithOpenAiMessage(c, selectErr.StatusCode, message, selectErr.Code)
+				abortWithOpenAiMessage(c, status, message, selectErr.Code)
 				return
 			}
 		}

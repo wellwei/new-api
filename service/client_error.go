@@ -116,11 +116,23 @@ func clientStatusFor(c *gin.Context, err *types.NewAPIError) int {
 	if modelName == "" {
 		modelName = c.GetString("original_model")
 	}
-	if modelName == "" {
-		return status
+	return ModelUnavailableStatus(modelName, status)
+}
+
+// ModelUnavailableStatus resolves the status for a model that could not be
+// served: 404 when the gateway does not serve the model at all, otherwise the
+// caller's original status (503 — the model exists but has no capacity now).
+//
+// Only a 503 is reconsidered. Other statuses already say something specific
+// the caller should act on, and rewriting them to 404 would lose that. An
+// unknown model name or an unavailable model table keeps the retryable status,
+// because a wrong 404 tells a working caller their model is gone.
+func ModelUnavailableStatus(modelName string, fallback int) int {
+	if fallback != http.StatusServiceUnavailable {
+		return fallback
 	}
-	if model.IsModelEnabled(modelName) {
-		return status
+	if modelName == "" || model.IsModelEnabled(modelName) {
+		return fallback
 	}
 	return http.StatusNotFound
 }
