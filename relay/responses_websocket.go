@@ -107,6 +107,10 @@ type responsesWSSession struct {
 	// error messages this session writes back, so the frames it sends read in
 	// the same language the caller asked for.
 	clientLanguage string
+	// projectModel reports whether the frames sent back name the model the
+	// caller requested rather than the one upstream declared. Callers below the
+	// operator roles are not told which upstream served them.
+	projectModel bool
 
 	// These fields belong to the serial request worker and describe the actual
 	// established connection. Per-request token/user data is never stored here.
@@ -124,7 +128,8 @@ func ResponsesWebSocketHelper(c *gin.Context, client *websocket.Conn, runner Res
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	s := &responsesWSSession{ctx: ctx, cancel: cancel, client: client, runner: runner,
 		request: c.Request.Clone(ctx), requestID: c.GetString(common.RequestIdKey),
-		clientLanguage: i18n.GetLangFromContext(c)}
+		clientLanguage: i18n.GetLangFromContext(c),
+		projectModel:   common.GetContextKeyInt(c, appconstant.ContextKeyUserRole) < common.RoleAdminUser}
 	if s.requestID == "" {
 		s.requestID = common.NewRequestId()
 	}
@@ -708,7 +713,13 @@ func (s *responsesWSSession) writeTarget(kind int, message []byte) error {
 	return target.WriteMessage(kind, message)
 }
 
+// writeClient sends a frame to the caller. A non-operator caller never learns
+// which model upstream declared: the frame reports the model it requested,
+// while the operator roles keep the declaration for diagnostics.
 func (s *responsesWSSession) writeClient(kind int, message []byte) error {
+	if s.projectModel && s.lockedModel != "" {
+		message = middleware.ProjectModelNames(message, s.lockedModel)
+	}
 	s.clientWriteMu.Lock()
 	defer s.clientWriteMu.Unlock()
 	if err := s.client.SetWriteDeadline(time.Now().Add(responsesWSWriteTimeout)); err != nil {

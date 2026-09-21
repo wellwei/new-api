@@ -1128,13 +1128,17 @@ export function DetailsDialog(props: DetailsDialogProps) {
           />
         )}
 
-        {other?.response_model && (
+        {/* The response observation and the model mapping both name the route
+            the request actually took upstream, which only an operator view
+            reports. */}
+        {props.isAdmin && other?.response_model && (
           <DetailSection label={t('Response Model')}>
             <ResponseModelDetails observation={other.response_model} />
           </DetailSection>
         )}
         {/* Model mapping for logs without response observations */}
-        {!other?.response_model &&
+        {props.isAdmin &&
+          !other?.response_model &&
           other?.is_model_mapped &&
           other?.upstream_model_name && (
             <DetailSection label={t('Model Mapping')}>

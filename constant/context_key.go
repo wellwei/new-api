@@ -54,6 +54,11 @@ const (
 	ContextKeyUsingGroup  ContextKey = "group"
 	ContextKeyUserName    ContextKey = "username"
 
+	// ContextKeyUserRole holds the calling user's role on relay paths, where
+	// responses are projected for callers who are not operators. Dashboard
+	// sessions already store it under the same key.
+	ContextKeyUserRole ContextKey = "role"
+
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"

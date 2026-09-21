@@ -148,7 +148,9 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
               mono
             />
           ) : null}
-          {properties?.upstream_model_name ? (
+          {/* The model the task was rewritten to is operator detail; the task
+              owner sees the model they submitted. */}
+          {props.isAdmin && properties?.upstream_model_name ? (
             <DetailRow
               label={t('Actual Model')}
               value={properties.upstream_model_name}

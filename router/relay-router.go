@@ -65,6 +65,9 @@ func SetRelayRouter(router *gin.Engine) {
 	playgroundRouter.Use(middleware.RouteTag("relay"))
 	playgroundRouter.Use(middleware.SystemPerformanceCheck())
 	playgroundRouter.Use(middleware.UserAuth(), middleware.Distribute())
+	// Registered after auth so the caller's role is known: the playground is a
+	// panel entry point, and a non-operator using it sees the model it asked for.
+	playgroundRouter.Use(middleware.ResponseModelProjection())
 	{
 		playgroundRouter.POST("/chat/completions", controller.Playground)
 	}
@@ -75,9 +78,15 @@ func SetRelayRouter(router *gin.Engine) {
 	{
 		// Responses WebSocket route. Channel selection happens after the first
 		// response.create event; each event runs the ordinary request limiter.
+		// Registered ahead of the projection below because a hijacked
+		// connection writes frames rather than through c.Writer; that route
+		// projects the model itself, in the session.
 		relayV1Router.GET("/responses", controller.ResponsesWebSocket)
 	}
 	relayV1Router.Use(middleware.ModelRequestRateLimit())
+	// Every /v1 response passes the projection, so a non-operator caller reads
+	// the model it requested and never the one internal routing chose.
+	relayV1Router.Use(middleware.ResponseModelProjection())
 	{
 		// WebSocket 路由（统一到 Relay）
 		wsRouter := relayV1Router.Group("")
@@ -198,6 +207,7 @@ func SetRelayRouter(router *gin.Engine) {
 	relayGeminiRouter.Use(middleware.TokenAuth())
 	relayGeminiRouter.Use(middleware.ModelRequestRateLimit())
 	relayGeminiRouter.Use(middleware.Distribute())
+	relayGeminiRouter.Use(middleware.ResponseModelProjection())
 	{
 		// Gemini API 路径格式: /v1beta/models/{model_name}:{action}
 		relayGeminiRouter.POST("/models/*path", func(c *gin.Context) {

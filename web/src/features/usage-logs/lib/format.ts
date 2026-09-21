@@ -233,9 +233,17 @@ export function getResponseTimeColor(
 }
 
 /**
- * Format model name with mapping indicator
+ * Format model name with mapping indicator.
+ *
+ * The mapping names the model the request was rewritten to before it left the
+ * gateway, and the response observation reports upstream disagreements: both
+ * are operator detail. Only an admin-scoped view may show them, so the caller
+ * passes its viewer scope and a non-admin view is told the request model alone.
  */
-export function formatModelName(log: UsageLog): {
+export function formatModelName(
+  log: UsageLog,
+  showMapping: boolean
+): {
   name: string
   isMapped: boolean
   actualModel?: string
@@ -243,6 +251,7 @@ export function formatModelName(log: UsageLog): {
 } {
   const other = parseLogOther(log.other)
   const isMapped = !!(
+    showMapping &&
     other?.is_model_mapped &&
     other?.upstream_model_name &&
     other.upstream_model_name !== ''
@@ -252,7 +261,7 @@ export function formatModelName(log: UsageLog): {
     name: log.model_name,
     isMapped,
     actualModel: isMapped ? other.upstream_model_name : undefined,
-    responseModel: other?.response_model,
+    responseModel: showMapping ? other?.response_model : undefined,
   }
 }
 

@@ -451,6 +451,10 @@ func TokenAuth() func(c *gin.Context) {
 		}
 
 		userCache.WriteContext(c)
+		// Relay handlers project responses for callers below the operator
+		// roles, so the role must travel with the request the same way it does
+		// for dashboard sessions (authHelper).
+		c.Set(string(constant.ContextKeyUserRole), userCache.Role)
 
 		userGroup := userCache.Group
 		tokenGroup := token.Group

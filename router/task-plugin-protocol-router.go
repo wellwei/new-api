@@ -30,6 +30,9 @@ func taskPluginProtocolHandlers(protocol, operation string) ([]gin.HandlerFunc, 
 		return []gin.HandlerFunc{
 			middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.TokenAuth(),
 			middleware.ModelRequestRateLimit(), middleware.PinTaskPluginEndpoint(), middleware.PrepareTaskPluginEndpoint(), middleware.Distribute(),
+			// These routes are registered outside the /v1 group, so the
+			// projection that group applies does not reach them.
+			middleware.ResponseModelProjection(),
 			func(c *gin.Context) {
 				controller.RelayTaskPluginEndpoint(c, func(c *gin.Context) { controller.Relay(c, types.RelayFormatOpenAIResponses) })
 			},

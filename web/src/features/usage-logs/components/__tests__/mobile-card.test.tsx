@@ -27,6 +27,8 @@ import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 
 import { usageLogSchema, type UsageLog } from '../../data/schema'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 import { useCommonLogsColumns } from '../columns/common-logs-columns'
 import { UsageLogsMobileList } from '../usage-logs-mobile-card'
 import { UsageLogsProvider, useUsageLogsContext } from '../usage-logs-provider'
@@ -84,6 +86,14 @@ function Fixture(props: {
 }
 
 function renderLogs(props: Parameters<typeof Fixture>[0] = {}) {
+  // The model mapping and the response observation are operator detail, so a
+  // view that should show them has to run as an admin.
+  useAuthStore.setState(useAuthStore.getInitialState(), true)
+  useAuthStore.getState().auth.setUser({
+    id: 1,
+    username: 'tester',
+    role: props.admin === false ? ROLE.USER : ROLE.ADMIN,
+  })
   return render(
     <QueryClientProvider
       client={
@@ -318,6 +328,42 @@ it('shows mapped model names in full when inspecting a mobile model badge', asyn
       'provider-production-mapped-model-with-a-long-name'
     )
   ).toBeVisible()
+})
+
+it('reports only the requested model to an ordinary user view', async () => {
+  const user = userEvent.setup()
+  renderLogs({
+    admin: false,
+    logs: [
+      {
+        ...log,
+        model_name: 'requested-model',
+        other: JSON.stringify({
+          is_model_mapped: true,
+          upstream_model_name: 'provider-upstream-model',
+          response_model: {
+            requested_model: 'requested-model',
+            upstream_model: 'provider-upstream-model',
+            returned_model: 'upstream-chosen-variant',
+          },
+        }),
+      },
+    ],
+  })
+
+  // With nothing to reveal, the badge keeps only its copy affordance, and even
+  // that label names the requested model alone.
+  const badge = screen.getByText('requested-model')
+  expect(badge).toBeVisible()
+  expect(screen.queryByText('provider-upstream-model')).not.toBeInTheDocument()
+  expect(
+    screen.queryByText('upstream-chosen-variant')
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Model: requested-model' })
+  ).toBeVisible()
+  expect(screen.queryByText('Actual Model')).not.toBeInTheDocument()
+  expect(user).toBeDefined()
 })
 
 it('shows loading placeholders without displaying stale log fields', () => {
