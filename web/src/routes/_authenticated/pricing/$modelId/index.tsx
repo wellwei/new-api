@@ -21,15 +21,15 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { pricingSearchSchema } from '@/features/pricing/search'
 
 /**
- * Model details moved into the model square's drawer, addressed by the `model`
- * search parameter. Old per-model links forward there so they keep resolving.
+ * Per-model addresses from when the model square was a public page: the
+ * details drawer is addressed by the `model` search parameter now, so forward
+ * old links there instead of 404ing them.
  */
-export const Route = createFileRoute('/pricing/$modelId/')({
+export const Route = createFileRoute('/_authenticated/pricing/$modelId/')({
   validateSearch: pricingSearchSchema,
   beforeLoad: ({ params, search }) => {
     throw redirect({
-      to: '/explore/$section',
-      params: { section: 'models' },
+      to: '/pricing',
       search: { ...search, model: params.modelId },
       replace: true,
     })

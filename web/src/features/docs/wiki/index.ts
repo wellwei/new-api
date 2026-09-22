@@ -39,7 +39,7 @@ export interface WikiPage {
   id: WikiPageId
   /** Sidebar label; kept short so the list stays scannable. */
   title: string
-  /** One-line summary shown under the active page's heading. */
+  /** One-line summary shown above the page body. */
   summary: string
   content: string
 }
@@ -75,4 +75,17 @@ export const DEFAULT_WIKI_PAGE_ID: WikiPageId = 'quick-start'
 
 export function isWikiPageId(value: string): value is WikiPageId {
   return WIKI_PAGES.some((page) => page.id === value)
+}
+
+/**
+ * Sidebar children for the Docs entry.
+ *
+ * Derived from {@link WIKI_PAGES}, so publishing a page is one markdown file
+ * plus one entry above — navigation and routing need no changes.
+ */
+export function getDocsNavItems(): { title: string; url: string }[] {
+  return WIKI_PAGES.map((page) => ({
+    title: page.title,
+    url: `/docs/${page.id}`,
+  }))
 }

@@ -18,20 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { pricingSearchSchema } from '@/features/pricing/search'
+import { DEFAULT_WIKI_PAGE_ID } from '@/features/docs/wiki'
 
-/**
- * The model square used to be a standalone public page. It now lives in the
- * console as the first tab of `/explore`, so the old address forwards there
- * instead of 404ing — old bookmarks keep working.
- */
-export const Route = createFileRoute('/pricing/')({
-  validateSearch: pricingSearchSchema,
-  beforeLoad: ({ search }) => {
+export const Route = createFileRoute('/_authenticated/docs/')({
+  beforeLoad: () => {
     throw redirect({
-      to: '/explore/$section',
-      params: { section: 'models' },
-      search,
+      to: '/docs/$pageId',
+      params: { pageId: DEFAULT_WIKI_PAGE_ID },
       replace: true,
     })
   },

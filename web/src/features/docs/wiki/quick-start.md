@@ -10,6 +10,7 @@ Anthropic、Gemini、国产模型等多家的模型。
 进入 **API 密钥** 页面，点「创建 API 密钥」。密钥只在创建时完整显示一次，请立即保存。
 
 创建时可以：
+
 - 选择**模型范围**与**令牌分组**：令牌分组留空即可（跟随你的账号档位）。
 - 设置**额度上限**与**过期时间**：留空表示不限制。
 
@@ -36,11 +37,11 @@ curl https://<本站域名>/v1/chat/completions \
 
 同一个密钥、同一个地址，三条协议都可用：
 
-| 协议 | 路径 | 典型用途 |
-|---|---|---|
-| OpenAI Chat Completions | `/v1/chat/completions` | 绝大多数客户端与 SDK |
-| OpenAI Responses | `/v1/responses` | Codex 等新一代客户端 |
-| Anthropic Messages | `/v1/messages` | Claude Code、Anthropic SDK |
+| 协议                    | 路径                   | 典型用途                   |
+| ----------------------- | ---------------------- | -------------------------- |
+| OpenAI Chat Completions | `/v1/chat/completions` | 绝大多数客户端与 SDK       |
+| OpenAI Responses        | `/v1/responses`        | Codex 等新一代客户端       |
+| Anthropic Messages      | `/v1/messages`         | Claude Code、Anthropic SDK |
 
 调用哪一条取决于你用的客户端，不需要额外配置——网关会把它转成上游能理解的协议。
 

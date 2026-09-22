@@ -24,6 +24,12 @@ export type ModuleAccess = { enabled: boolean; requireAuth: boolean }
 
 export type HeaderNavModule = 'rankings' | 'pricing'
 
+/**
+ * Nav modules the backend stores as a plain on/off flag rather than an
+ * `{enabled, requireAuth}` pair (only the two above carry an auth requirement).
+ */
+export type HeaderNavToggleModule = 'home' | 'console' | 'docs' | 'about'
+
 export type HeaderNavModules = {
   home: boolean
   console: boolean
@@ -190,6 +196,38 @@ export async function getModuleAccessForGuard(
     return getModuleAccessFromStatus(status, module)
   } catch {
     return { enabled: false, requireAuth: true }
+  }
+}
+
+/**
+ * Whether an on/off nav module is enabled in an already-loaded status payload.
+ *
+ * Falls back to the module's default (enabled) when status is missing or does
+ * not carry the key.
+ */
+export function isToggleModuleEnabledFromStatus(
+  status: Record<string, unknown> | null,
+  module: HeaderNavToggleModule
+): boolean {
+  return parseHeaderNavModulesFromStatus(status)[module] !== false
+}
+
+/**
+ * Resolve an on/off nav module for a router `beforeLoad` guard.
+ *
+ * Same status read and same fail-closed behaviour as
+ * {@link getModuleAccessForGuard}: a status read that cannot complete leaves
+ * the surface hidden rather than half-rendered.
+ */
+export async function isToggleModuleEnabledForGuard(
+  queryClient: QueryClient,
+  module: HeaderNavToggleModule
+): Promise<boolean> {
+  try {
+    const status = await queryClient.fetchQuery(statusQueryOptions)
+    return isToggleModuleEnabledFromStatus(status, module)
+  } catch {
+    return false
   }
 }
 

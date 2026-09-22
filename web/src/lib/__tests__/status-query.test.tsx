@@ -25,6 +25,7 @@ import { useStatus } from '@/hooks/use-status'
 import { api } from '@/lib/api'
 import {
   getModuleAccessForGuard,
+  isToggleModuleEnabledForGuard,
   type HeaderNavModule,
 } from '@/lib/nav-modules'
 import {
@@ -262,4 +263,36 @@ describe('module guard status freshness', () => {
       })
     }
   )
+})
+
+/**
+ * The on/off nav modules (home, console, docs, about) have no auth flag, so
+ * they resolve to a plain boolean with the same cache and fail-closed contract
+ * as the access modules above.
+ */
+describe('toggle module guard', () => {
+  test.each([
+    [true, true],
+    [false, false],
+    [undefined, true],
+  ])('resolves docs=%s from a warm cache as %s', async (raw, expected) => {
+    const queryClient = createQueryClient()
+    queryClient.setQueryData(STATUS_QUERY_KEY, {
+      HeaderNavModules: raw === undefined ? {} : { docs: raw },
+    })
+
+    expect(await isToggleModuleEnabledForGuard(queryClient, 'docs')).toBe(
+      expected
+    )
+    expect(statusRequests).toHaveLength(0)
+  })
+
+  test('fails closed when the status request fails', async () => {
+    const queryClient = createQueryClient()
+    apiClient.get = async () => {
+      throw new Error('Status unavailable')
+    }
+
+    expect(await isToggleModuleEnabledForGuard(queryClient, 'docs')).toBe(false)
+  })
 })

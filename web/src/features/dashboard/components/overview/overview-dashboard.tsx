@@ -89,19 +89,12 @@ type DashboardActionPath =
   | '/wallet'
   | '/channels'
   | '/usage-logs'
-  | '/explore/$section'
-
-/**
- * Path parameters for the destinations in {@link DashboardActionPath}. Only the
- * model square needs one: its console tab is addressed by section.
- */
-type DashboardActionParams = { section: 'models' }
+  | '/pricing'
 
 interface StartStep {
   title: string
   description: string
   to: DashboardActionPath
-  params?: DashboardActionParams
   icon: LucideIcon
   completed: boolean
 }
@@ -110,7 +103,6 @@ interface QuickAction {
   title: string
   description: string
   to: DashboardActionPath
-  params?: DashboardActionParams
   icon: LucideIcon
   adminOnly?: boolean
 }
@@ -258,7 +250,6 @@ function StartStepItem(props: {
 
       <Link
         to={props.step.to}
-        params={props.step.params}
         className='bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
       >
         <span className='flex min-w-0 items-start gap-2.5'>
@@ -435,7 +426,7 @@ function QuickActionItem(props: { action: QuickAction }) {
     <Button
       variant='outline'
       className='h-auto justify-start rounded-xl px-3 py-3 text-left'
-      render={<Link to={props.action.to} params={props.action.params} />}
+      render={<Link to={props.action.to} />}
     >
       <span className='bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg'>
         <Icon className='size-4' aria-hidden='true' />
@@ -460,7 +451,7 @@ function CompactQuickAction(props: { action: QuickAction }) {
       variant='outline'
       size='sm'
       className='bg-background/70 h-8 min-w-24 gap-1.5 px-2.5'
-      render={<Link to={props.action.to} params={props.action.params} />}
+      render={<Link to={props.action.to} />}
     >
       <Icon data-icon='inline-start' />
       <span>{props.action.title}</span>
@@ -563,8 +554,7 @@ export function OverviewDashboard() {
       {
         title: t('Pricing'),
         description: t('Review model rates before scaling traffic'),
-        to: '/explore/$section',
-        params: { section: 'models' },
+        to: '/pricing',
         icon: BookOpen,
       },
     ],

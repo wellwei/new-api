@@ -23,16 +23,20 @@ import { RichContent } from '@/components/rich-content'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { formatDateTimeObject } from '@/lib/time'
 
+export interface AnnouncementDetail {
+  title?: string
+  content?: string
+  /** Severity/colour key used by list views to tint the status dot. */
+  type?: string
+  tag?: string
+  publishDate?: string | Date
+  extra?: string
+}
+
 interface AnnouncementDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  announcement: {
-    title?: string
-    content?: string
-    tag?: string
-    publishDate?: string
-    extra?: string
-  } | null
+  announcement: AnnouncementDetail | null
 }
 
 export function AnnouncementDetailModal({

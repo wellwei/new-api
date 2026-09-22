@@ -16,8 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { getRouteApi } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { SectionPageLayout } from '@/components/layout'
 
 import {
   LoadingSkeleton,
@@ -32,26 +35,20 @@ import {
 import { EXCLUDED_GROUPS, VIEW_MODES } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
-import type { PricingSearch } from './search'
 
-export interface PricingPanelProps {
-  /** Active search params, owned by the route that renders the panel. */
-  search: PricingSearch
-  /** Model whose details are open, or null. */
-  modelName: string | null
-  onModelNameChange: (modelName: string | null) => void
-  className?: string
-}
+const route = getRouteApi('/_authenticated/pricing/')
 
 /**
- * Model square content: filters, table/card view and the details drawer.
+ * Model square — the console's model catalogue.
  *
- * Deliberately layout-free — the host route supplies the surrounding page
- * (console section or standalone public page) and owns URL state, so the panel
- * can be embedded anywhere without a second copy of the model square.
+ * Filters, view mode and the open model's details all live in the URL, so a
+ * filtered list or a single model is directly linkable (`?model=` opens the
+ * details drawer).
  */
-export function PricingPanel(props: PricingPanelProps) {
+export function Pricing() {
   const { t } = useTranslation()
+  const navigate = route.useNavigate()
+  const search = route.useSearch()
   const {
     models,
     vendors,
@@ -91,16 +88,26 @@ export function PricingPanel(props: PricingPanelProps) {
     availableTags,
     clearFilters,
     clearSearch,
-  } = useFilters(models || [], props.search)
+  } = useFilters(models || [], search)
+
+  const handleModelNameChange = useCallback(
+    (modelName: string | null) => {
+      void navigate({
+        to: '/pricing',
+        search: (previous) => ({ ...previous, model: modelName ?? undefined }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
 
   const selectedModel = useMemo(
     () =>
-      props.modelName
-        ? (models || []).find(
-            (model) => model.model_name === props.modelName
-          ) || null
+      search.model
+        ? (models || []).find((model) => model.model_name === search.model) ||
+          null
         : null,
-    [models, props.modelName]
+    [models, search.model]
   )
 
   const availableGroups = useMemo(
@@ -135,7 +142,7 @@ export function PricingPanel(props: PricingPanelProps) {
       return (
         <ModelCardGrid
           models={filteredModels}
-          onModelClick={props.onModelNameChange}
+          onModelClick={handleModelNameChange}
           priceRate={priceRate}
           usdExchangeRate={usdExchangeRate}
           tokenUnit={tokenUnit}
@@ -153,93 +160,100 @@ export function PricingPanel(props: PricingPanelProps) {
         tokenUnit={tokenUnit}
         showRechargePrice={showRechargePrice}
         selectedGroup={groupFilter}
-        onModelClick={props.onModelNameChange}
+        onModelClick={handleModelNameChange}
       />
     )
   }
 
   return (
-    <div className={props.className}>
-      <div className='flex flex-wrap items-center gap-x-3 gap-y-2'>
-        <SearchBar
-          value={searchInput}
-          onChange={setSearchInput}
-          onClear={clearSearch}
-          placeholder={t('Search model name, provider, endpoint, or tag...')}
-          className='min-w-0 flex-1 sm:max-w-md'
-        />
-        <p className='text-muted-foreground/70 text-xs'>
-          {t('This site currently has {{count}} models enabled', {
-            count: models?.length || 0,
-          })}
-        </p>
-      </div>
-
-      <div className='mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]'>
-        <PricingSidebar
-          quotaTypeFilter={quotaTypeFilter}
-          endpointTypeFilter={endpointTypeFilter}
-          vendorFilter={vendorFilter}
-          groupFilter={groupFilter}
-          tagFilter={tagFilter}
-          onQuotaTypeChange={setQuotaTypeFilter}
-          onEndpointTypeChange={setEndpointTypeFilter}
-          onVendorChange={setVendorFilter}
-          onGroupChange={setGroupFilter}
-          onTagChange={setTagFilter}
-          vendors={vendors || []}
-          groups={availableGroups}
-          groupRatios={groupRatio}
-          tags={availableTags}
-          models={models || []}
-          hasActiveFilters={hasActiveFilters}
-          onClearFilters={clearFilters}
-          className='hover-scrollbar hidden max-h-full self-start overflow-y-auto xl:block'
-        />
-
-        <main className='flex min-h-0 min-w-0 flex-col gap-4'>
-          <PricingToolbar
-            filteredCount={filteredModels.length}
-            totalCount={models?.length}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            tokenUnit={tokenUnit}
-            onTokenUnitChange={setTokenUnit}
-            showRechargePrice={showRechargePrice}
-            onRechargePriceChange={setShowRechargePrice}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            quotaTypeFilter={quotaTypeFilter}
-            endpointTypeFilter={endpointTypeFilter}
-            vendorFilter={vendorFilter}
-            groupFilter={groupFilter}
-            tagFilter={tagFilter}
-            onQuotaTypeChange={setQuotaTypeFilter}
-            onEndpointTypeChange={setEndpointTypeFilter}
-            onVendorChange={setVendorFilter}
-            onGroupChange={setGroupFilter}
-            onTagChange={setTagFilter}
-            vendors={vendors || []}
-            groups={availableGroups}
-            groupRatios={groupRatio}
-            tags={availableTags}
-            models={models || []}
-            hasActiveFilters={hasActiveFilters}
-            activeFilterCount={activeFilterCount}
-            onClearFilters={clearFilters}
-          />
-
-          <div className='hover-scrollbar min-h-0 flex-1 overflow-y-auto'>
-            {renderPricingContent()}
+    <SectionPageLayout fixedContent>
+      <SectionPageLayout.Title>{t('Model Square')}</SectionPageLayout.Title>
+      <SectionPageLayout.Content>
+        <div className='flex h-full min-h-0 flex-col'>
+          <div className='flex flex-wrap items-center gap-x-3 gap-y-2'>
+            <SearchBar
+              value={searchInput}
+              onChange={setSearchInput}
+              onClear={clearSearch}
+              placeholder={t(
+                'Search model name, provider, endpoint, or tag...'
+              )}
+              className='min-w-0 flex-1 sm:max-w-md'
+            />
+            <p className='text-muted-foreground/70 text-xs'>
+              {t('This site currently has {{count}} models enabled', {
+                count: models?.length || 0,
+              })}
+            </p>
           </div>
-        </main>
-      </div>
+
+          <div className='mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]'>
+            <PricingSidebar
+              quotaTypeFilter={quotaTypeFilter}
+              endpointTypeFilter={endpointTypeFilter}
+              vendorFilter={vendorFilter}
+              groupFilter={groupFilter}
+              tagFilter={tagFilter}
+              onQuotaTypeChange={setQuotaTypeFilter}
+              onEndpointTypeChange={setEndpointTypeFilter}
+              onVendorChange={setVendorFilter}
+              onGroupChange={setGroupFilter}
+              onTagChange={setTagFilter}
+              vendors={vendors || []}
+              groups={availableGroups}
+              groupRatios={groupRatio}
+              tags={availableTags}
+              models={models || []}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearFilters}
+              className='hover-scrollbar hidden max-h-full self-start overflow-y-auto xl:block'
+            />
+
+            <main className='flex min-h-0 min-w-0 flex-col gap-4'>
+              <PricingToolbar
+                filteredCount={filteredModels.length}
+                totalCount={models?.length}
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+                tokenUnit={tokenUnit}
+                onTokenUnitChange={setTokenUnit}
+                showRechargePrice={showRechargePrice}
+                onRechargePriceChange={setShowRechargePrice}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                quotaTypeFilter={quotaTypeFilter}
+                endpointTypeFilter={endpointTypeFilter}
+                vendorFilter={vendorFilter}
+                groupFilter={groupFilter}
+                tagFilter={tagFilter}
+                onQuotaTypeChange={setQuotaTypeFilter}
+                onEndpointTypeChange={setEndpointTypeFilter}
+                onVendorChange={setVendorFilter}
+                onGroupChange={setGroupFilter}
+                onTagChange={setTagFilter}
+                vendors={vendors || []}
+                groups={availableGroups}
+                groupRatios={groupRatio}
+                tags={availableTags}
+                models={models || []}
+                hasActiveFilters={hasActiveFilters}
+                activeFilterCount={activeFilterCount}
+                onClearFilters={clearFilters}
+              />
+
+              <div className='hover-scrollbar min-h-0 flex-1 overflow-y-auto'>
+                {renderPricingContent()}
+              </div>
+            </main>
+          </div>
+        </div>
+      </SectionPageLayout.Content>
 
       {selectedModel && (
         <ModelDetailsDrawer
           open={Boolean(selectedModel)}
           onOpenChange={(open) => {
-            if (!open) props.onModelNameChange(null)
+            if (!open) handleModelNameChange(null)
           }}
           model={selectedModel}
           groupRatio={groupRatio || {}}
@@ -257,6 +271,6 @@ export function PricingPanel(props: PricingPanelProps) {
           showRechargePrice={showRechargePrice}
         />
       )}
-    </div>
+    </SectionPageLayout>
   )
 }

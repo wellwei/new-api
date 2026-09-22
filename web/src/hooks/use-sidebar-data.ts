@@ -18,13 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   Activity,
+  BookOpen,
   Box,
   ClipboardList,
-  Compass,
   CreditCard,
   FileText,
   Key,
   LayoutDashboard,
+  LayoutGrid,
   ListTodo,
   PlugZap,
   Radio,
@@ -38,9 +39,13 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import type { NavGroup, SidebarData } from '@/components/layout/types'
+import type { NavGroup, NavItem, SidebarData } from '@/components/layout/types'
+import { getDocsNavItems } from '@/features/docs/wiki'
+import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
+
+import { useStatus } from './use-status'
 
 /**
  * Narrow navigation groups to what the signed-in role may see.
@@ -71,57 +76,79 @@ export function filterNavGroupsByRole(
  *
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`, narrowed to the
- * signed-in role.
+ * signed-in role and to the site's `HeaderNavModules` switches: the model
+ * square and the docs entry disappear when the administrator turned that
+ * surface off, so the sidebar never offers a page whose data the backend
+ * refuses to serve.
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const { status } = useStatus()
   const userRole = useAuthStore((s) => s.auth.user?.role) ?? ROLE.GUEST
+  const modules = parseHeaderNavModulesFromStatus(
+    status as Record<string, unknown> | null
+  )
+
+  const generalItems: NavItem[] = [
+    {
+      title: t('Overview'),
+      url: '/dashboard/overview',
+      icon: Activity,
+    },
+    ...(modules.pricing.enabled
+      ? [
+          {
+            title: t('Model Square'),
+            url: '/pricing',
+            icon: LayoutGrid,
+          },
+        ]
+      : []),
+    ...(modules.docs !== false
+      ? [
+          {
+            title: t('Docs'),
+            icon: BookOpen,
+            items: getDocsNavItems(),
+          },
+        ]
+      : []),
+    {
+      title: t('Dashboard'),
+      url: '/dashboard/models',
+      icon: LayoutDashboard,
+    },
+    {
+      title: t('API Keys'),
+      url: '/keys',
+      icon: Key,
+    },
+    {
+      title: t('Usage Logs'),
+      url: '/usage-logs/common',
+      icon: FileText,
+    },
+    {
+      title: t('Audit Logs'),
+      url: '/usage-logs/audit',
+      icon: ClipboardList,
+      requiredRole: ROLE.ADMIN,
+    },
+    {
+      title: t('Task Logs'),
+      url: '/usage-logs/task',
+      activeUrls: ['/usage-logs/drawing'],
+      configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
+      icon: ListTodo,
+      requiredRole: ROLE.ADMIN,
+    },
+  ]
+
   const navGroups: NavGroup[] = [
     {
       id: 'general',
       title: t('General'),
-      items: [
-        {
-          title: t('Explore'),
-          url: '/explore/models',
-          activeUrls: ['/pricing'],
-          icon: Compass,
-        },
-        {
-          title: t('Overview'),
-          url: '/dashboard/overview',
-          icon: Activity,
-        },
-        {
-          title: t('Dashboard'),
-          url: '/dashboard/models',
-          icon: LayoutDashboard,
-        },
-        {
-          title: t('API Keys'),
-          url: '/keys',
-          icon: Key,
-        },
-        {
-          title: t('Usage Logs'),
-          url: '/usage-logs/common',
-          icon: FileText,
-        },
-        {
-          title: t('Audit Logs'),
-          url: '/usage-logs/audit',
-          icon: ClipboardList,
-          requiredRole: ROLE.ADMIN,
-        },
-        {
-          title: t('Task Logs'),
-          url: '/usage-logs/task',
-          activeUrls: ['/usage-logs/drawing'],
-          configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
-          icon: ListTodo,
-          requiredRole: ROLE.ADMIN,
-        },
-      ],
+      items: generalItems,
     },
     {
       id: 'personal',

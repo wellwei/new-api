@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, renderHook } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ROLE } from '@/lib/roles'
@@ -38,12 +40,26 @@ afterEach(() => {
   useAuthStore.getState().auth.reset()
 })
 
-function sidebarTitles(role?: number) {
+function sidebarFor(role?: number, modules?: object) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(['status'], {
+    HeaderNavModules: modules ? JSON.stringify(modules) : '',
+  })
   if (role !== undefined) {
     useAuthStore.getState().auth.setUser({ id: 1, username: 'alice', role })
   }
-  const { result } = renderHook(() => useSidebarData())
+  function Wrapper(props: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={client}>
+        {props.children}
+      </QueryClientProvider>
+    )
+  }
+  const { result } = renderHook(() => useSidebarData(), { wrapper: Wrapper })
   return {
+    groups: result.current.navGroups,
     titles: result.current.navGroups
       .flatMap((group) => group.items)
       .map((item) => item.title),
@@ -53,7 +69,7 @@ function sidebarTitles(role?: number) {
 
 describe('console sidebar visibility by role', () => {
   it('hides audit and task logs from a regular user but keeps usage logs', () => {
-    const { titles } = sidebarTitles(ROLE.USER)
+    const { titles } = sidebarFor(ROLE.USER)
 
     expect(titles).not.toContain('Audit Logs')
     expect(titles).not.toContain('Task Logs')
@@ -61,27 +77,58 @@ describe('console sidebar visibility by role', () => {
   })
 
   it('hides the admin group from a regular user', () => {
-    const { groupIds } = sidebarTitles(ROLE.USER)
+    const { groupIds } = sidebarFor(ROLE.USER)
 
     expect(groupIds).not.toContain('admin')
   })
 
   it('keeps audit and task logs for an administrator', () => {
-    const { titles } = sidebarTitles(ROLE.ADMIN)
+    const { titles } = sidebarFor(ROLE.ADMIN)
 
     expect(titles).toContain('Audit Logs')
     expect(titles).toContain('Task Logs')
   })
 
   it('shows the model square entry to every role', () => {
-    expect(sidebarTitles(ROLE.USER).titles).toContain('Explore')
-    expect(sidebarTitles(ROLE.ADMIN).titles).toContain('Explore')
+    expect(sidebarFor(ROLE.USER).titles).toContain('Model Square')
+    expect(sidebarFor(ROLE.ADMIN).titles).toContain('Model Square')
   })
 
   it('treats a visitor with no role as a regular user', () => {
-    const { titles } = sidebarTitles()
+    const { titles } = sidebarFor()
 
     expect(titles).not.toContain('Audit Logs')
     expect(titles).not.toContain('Task Logs')
+  })
+})
+
+describe('console sidebar visibility by site switch', () => {
+  function docsChildren(role: number, modules?: object) {
+    const docs = sidebarFor(role, modules)
+      .groups.flatMap((group) => group.items)
+      .find((item) => item.title === 'Docs')
+    return docs?.items?.map((item) => item.url)
+  }
+
+  it('lists every documentation page under the Docs entry', () => {
+    expect(docsChildren(ROLE.USER)).toEqual([
+      '/docs/quick-start',
+      '/docs/clients',
+      '/docs/pricing',
+      '/docs/faq',
+    ])
+  })
+
+  it('drops the Docs entry when the docs module is switched off', () => {
+    expect(sidebarFor(ROLE.USER, { docs: false }).titles).not.toContain('Docs')
+  })
+
+  it('drops the model square when the pricing module is switched off', () => {
+    const { titles } = sidebarFor(ROLE.USER, {
+      pricing: { enabled: false, requireAuth: false },
+    })
+
+    expect(titles).not.toContain('Model Square')
+    expect(titles).toContain('Docs')
   })
 })
