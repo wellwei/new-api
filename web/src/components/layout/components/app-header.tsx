@@ -16,9 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { AnnouncementCenter } from '@/components/announcement-center'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { LanguageSwitcher } from '@/components/language-switcher'
-import { NotificationPopover } from '@/components/notification-popover'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { SystemUpdateAction } from '@/features/system-update/system-update-action'
@@ -133,12 +133,10 @@ export function AppHeader({
             <Search className='w-8 flex-none [&>span]:hidden sm:[&>span]:inline' />
           )}
           {showNotifications && (
-            <NotificationPopover
-              open={notifications.popoverOpen}
-              onOpenChange={notifications.setPopoverOpen}
+            <AnnouncementCenter
+              open={notifications.dialogOpen}
+              onOpenChange={notifications.setDialogOpen}
               unreadCount={notifications.unreadCount}
-              activeTab={notifications.activeTab}
-              onTabChange={notifications.setActiveTab}
               notice={notifications.notice}
               announcements={notifications.announcements}
               loading={notifications.loading}

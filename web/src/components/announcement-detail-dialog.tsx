@@ -33,6 +33,14 @@ export interface AnnouncementDetail {
   extra?: string
 }
 
+/**
+ * One announcement as `/api/status` delivers it: a detail plus the operator's
+ * id, which is also what makes an entry "read" once the reader opens it.
+ */
+export interface AnnouncementItem extends AnnouncementDetail {
+  id?: number | string
+}
+
 interface AnnouncementDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
