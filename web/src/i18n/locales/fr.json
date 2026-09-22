@@ -3046,6 +3046,8 @@
     "Invited {{count}} users": "{{count}} invitations",
     "Invited by user ID": "Invité par l'ID utilisateur",
     "Invited Users": "Utilisateurs invités",
+    "Invite code (optional)": "Code d'invitation (facultatif)",
+    "Enter your invite code": "Saisissez le code de votre parrain — récompense pour les deux",
     "Invitee Reward": "Récompense de l'invité",
     "Inviter": "Inviteur",
     "Inviter Reward": "Récompense de l'inviteur",

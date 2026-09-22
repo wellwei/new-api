@@ -35,6 +35,10 @@ export const registerFormSchema = z
     email: z.string().optional(),
     password: accountPasswordSchema,
     confirmPassword: z.string().min(1, 'Please confirm your password'),
+    // 邀请码（可选）：走邀请链接注册时由 ?aff= 预填，也可以手工输入。
+    // 服务端只按 aff_code 查邀请人；填错或填一个不存在的码不会报错，
+    // 只是拿不到邀请奖励（不拦截注册，避免一个笔误把人挡在门外）。
+    affCode: z.string().optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords don't match.",

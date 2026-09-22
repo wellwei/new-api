@@ -95,6 +95,7 @@ export function SignUpForm({
       email: '',
       password: '',
       confirmPassword: '',
+      affCode: '',
     },
   })
 
@@ -136,8 +137,10 @@ export function SignUpForm({
     const aff = new URLSearchParams(window.location.search).get('aff')?.trim()
     if (aff) {
       saveAffiliateCode(aff)
+      // 预填到表单，让从邀请链接进来的用户能看见自己用的是哪个码
+      form.setValue('affCode', aff)
     }
-  }, [])
+  }, [form])
 
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     if (requiresLegalConsent && !agreedToLegal) {
@@ -161,12 +164,18 @@ export function SignUpForm({
 
     setIsLoading(true)
     try {
+      // 表单里的邀请码优先（用户看得见、可改）；没填才回退到 URL/localStorage 里存的。
+      // 服务端最终仍由 aff_code 决定，这里只是把两个来源合成一个值。
+      const affCode = data.affCode?.trim() || getAffiliateCode()
+      if (affCode) {
+        saveAffiliateCode(affCode)
+      }
       const res = await register({
         username: data.username,
         password: data.password,
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
-        aff_code: getAffiliateCode(),
+        aff_code: affCode,
         turnstile: turnstileToken,
       })
 
@@ -293,6 +302,21 @@ export function SignUpForm({
               <FormLabel>{t('Confirm password')}</FormLabel>
               <FormControl>
                 <PasswordInput placeholder={t('Confirm password')} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Invite Code Field — 由邀请链接进入时已自动预填 */}
+        <FormField
+          control={form.control}
+          name='affCode'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Invite code (optional)')}</FormLabel>
+              <FormControl>
+                <Input placeholder={t('Enter your invite code')} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>

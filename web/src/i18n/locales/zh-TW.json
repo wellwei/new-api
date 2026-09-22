@@ -3046,6 +3046,8 @@
     "Invited {{count}} users": "邀請 {{count}} 人",
     "Invited by user ID": "由用戶 ID 邀請",
     "Invited Users": "受邀用戶",
+    "Invite code (optional)": "邀請碼（選填）",
+    "Enter your invite code": "填寫邀請人的邀請碼，雙方都有獎勵",
     "Invitee Reward": "受邀者獎勵",
     "Inviter": "邀請人",
     "Inviter Reward": "邀請者獎勵",

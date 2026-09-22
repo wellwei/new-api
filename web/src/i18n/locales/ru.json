@@ -3046,6 +3046,8 @@
     "Invited {{count}} users": "Приглашено: {{count}}",
     "Invited by user ID": "Приглашен пользователем с ID",
     "Invited Users": "Приглашенные пользователи",
+    "Invite code (optional)": "Код приглашения (необязательно)",
+    "Enter your invite code": "Введите код пригласившего — награда обоим",
     "Invitee Reward": "Награда приглашенному",
     "Inviter": "Пригласивший",
     "Inviter Reward": "Награда приглашающему",

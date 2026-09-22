@@ -3046,6 +3046,8 @@
     "Invited {{count}} users": "招待 {{count}} 人",
     "Invited by user ID": "ユーザーIDによる招待",
     "Invited Users": "招待されたユーザー",
+    "Invite code (optional)": "招待コード（任意）",
+    "Enter your invite code": "招待者のコードを入力（双方に特典）",
     "Invitee Reward": "招待された側の報酬",
     "Inviter": "招待者",
     "Inviter Reward": "招待した側の報酬",
