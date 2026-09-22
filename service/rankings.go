@@ -200,6 +200,17 @@ func buildRankingsSnapshot(config rankingPeriodConfig, now time.Time) (*Rankings
 	}
 
 	meta := buildRankingModelMeta()
+	// 只统计**模型广场里能看到的模型**（meta 由 model.GetPricing() 建，即「在售且目录
+	// status=1」的交集）。用法日志里的模型名是请求侧原样记下的，里面混着只对我们内部
+	// 有意义的线路名——上游分区前缀（cn:auto）、线路后缀（deepseek-v4.1-flash-sg）、
+	// 已融合的变体（hy3-x / kimi-k3-1）。这些名字排在公开榜单上，等于把上游给的分区与
+	// 线路标注端给用户（还会顶着「Unknown」厂商），而用户按它去调只会 404。
+	// 过滤放在聚合之前：份额、厂商合计、历史曲线、升降幅都基于同一条可视集合，
+	// 否则被隐藏模型用量的 token 会留在分母里，把可见模型的占比压小。
+	currentTotals = filterOfferedModels(currentTotals, meta)
+	currentBuckets = filterOfferedBuckets(currentBuckets, meta)
+	previousTotals = filterOfferedModels(previousTotals, meta)
+
 	totalTokens := sumRankingTokens(currentTotals)
 	previousRankByModel := rankingRankMap(previousTotals)
 	previousTokensByModel := rankingTokenMap(previousTotals)
@@ -259,6 +270,39 @@ func modelMeta(modelName string, meta map[string]rankingModelMeta) rankingModelM
 		return item
 	}
 	return rankingModelMeta{vendor: rankingUnknownVendor}
+}
+
+// isOfferedModel 模型是否出现在模型广场（meta 的键集 = model.GetPricing() 的模型名）。
+// 榜单一律以它为准，见 buildRankingsSnapshot 里的说明。
+func isOfferedModel(modelName string, meta map[string]rankingModelMeta) bool {
+	_, ok := meta[modelName]
+	return ok
+}
+
+func filterOfferedModels(rows []model.RankingQuotaTotal, meta map[string]rankingModelMeta) []model.RankingQuotaTotal {
+	if len(rows) == 0 {
+		return rows
+	}
+	filtered := make([]model.RankingQuotaTotal, 0, len(rows))
+	for _, item := range rows {
+		if isOfferedModel(item.ModelName, meta) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterOfferedBuckets(rows []model.RankingQuotaBucket, meta map[string]rankingModelMeta) []model.RankingQuotaBucket {
+	if len(rows) == 0 {
+		return rows
+	}
+	filtered := make([]model.RankingQuotaBucket, 0, len(rows))
+	for _, item := range rows {
+		if isOfferedModel(item.ModelName, meta) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func buildRankedModels(totals []model.RankingQuotaTotal, totalTokens int64, previousRanks map[string]int, previousTokens map[string]int64, meta map[string]rankingModelMeta, showGrowth bool) []RankedModel {
