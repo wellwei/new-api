@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useSearch } from '@tanstack/react-router'
 import { useMemo, useCallback, useState } from 'react'
 
 import { useDebounce } from '@/hooks/use-debounce'
@@ -31,6 +30,7 @@ import {
   type ViewMode,
 } from '../constants'
 import { filterAndSortModels, extractAllTags } from '../lib/filters'
+import type { PricingSearch } from '../search'
 import type { PricingModel, TokenUnit } from '../types'
 
 type FilterState = {
@@ -53,8 +53,7 @@ function normalizeViewMode(value: unknown): ViewMode {
   return VIEW_MODES.CARD
 }
 
-export function useFilters(models: PricingModel[]) {
-  const search = useSearch({ from: '/pricing/' })
+export function useFilters(models: PricingModel[], search: PricingSearch) {
   const [filterState, setFilterState] = useState<FilterState>(() => ({
     search: search.search,
     sort: search.sort,

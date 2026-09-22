@@ -247,7 +247,9 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                       />
                     </FormControl>
                     <FormDescription>
-                      {t('Link to your documentation site')}
+                      {t(
+                        'Retained for upstream compatibility. The console renders its own built-in documentation, so this address is not used by the Docs page.'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

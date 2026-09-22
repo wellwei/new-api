@@ -608,11 +608,6 @@ export const STATIC_I18N_KEYS = [
   'Actions',
 
   // Sidebar modules
-  'Chat Area',
-  'Playground and chat functions',
-  'Playground',
-  'AI model testing environment',
-  'Chat session management',
   'No content to copy',
   'Please wait for the current generation to complete',
   'An unknown error occurred',

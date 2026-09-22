@@ -17,41 +17,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import z from 'zod'
 
-import { ModelDetails } from '@/features/pricing/components/model-details'
-import { getModuleAccessForGuard } from '@/lib/nav-modules'
-import { useAuthStore } from '@/stores/auth-store'
+import { pricingSearchSchema } from '@/features/pricing/search'
 
-const modelDetailsSearchSchema = z.object({
-  search: z.string().optional(),
-  sort: z.string().optional(),
-  vendor: z.string().optional(),
-  group: z.string().optional(),
-  quotaType: z.string().optional(),
-  endpointType: z.string().optional(),
-  tag: z.string().optional(),
-  tokenUnit: z.enum(['M', 'K']).optional(),
-  view: z.enum(['card', 'table']).optional().catch(undefined),
-  rechargePrice: z.boolean().optional(),
-})
-
+/**
+ * Model details moved into the model square's drawer, addressed by the `model`
+ * search parameter. Old per-model links forward there so they keep resolving.
+ */
 export const Route = createFileRoute('/pricing/$modelId/')({
-  validateSearch: modelDetailsSearchSchema,
-  beforeLoad: async ({ context, location }) => {
-    const access = await getModuleAccessForGuard(context.queryClient, 'pricing')
-    if (!access.enabled) {
-      throw redirect({ to: '/' })
-    }
-    if (access.requireAuth) {
-      const { auth } = useAuthStore.getState()
-      if (!auth.user) {
-        throw redirect({
-          to: '/sign-in',
-          search: { redirect: location.href },
-        })
-      }
-    }
+  validateSearch: pricingSearchSchema,
+  beforeLoad: ({ params, search }) => {
+    throw redirect({
+      to: '/explore/$section',
+      params: { section: 'models' },
+      search: { ...search, model: params.modelId },
+      replace: true,
+    })
   },
-  component: ModelDetails,
 })

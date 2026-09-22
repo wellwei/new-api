@@ -20,13 +20,12 @@ import {
   Activity,
   Box,
   ClipboardList,
+  Compass,
   CreditCard,
   FileText,
-  FlaskConical,
   Key,
   LayoutDashboard,
   ListTodo,
-  MessageSquare,
   PlugZap,
   Radio,
   ServerCog,
@@ -39,144 +38,162 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import type { SidebarData } from '@/components/layout/types'
+import type { NavGroup, SidebarData } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
+
+/**
+ * Narrow navigation groups to what the signed-in role may see.
+ *
+ * Applied here rather than at each rendering site because every consumer of
+ * this data — the sidebar and the command palette — must agree on who sees
+ * what; an admin-only entry leaking into search would be just as wrong as one
+ * leaking into the sidebar.
+ */
+export function filterNavGroupsByRole(
+  navGroups: NavGroup[],
+  role: number
+): NavGroup[] {
+  const isAdmin = role >= ROLE.ADMIN
+
+  return navGroups
+    .filter((group) => (group.id === 'admin' ? isAdmin : true))
+    .map((group) => {
+      const items = group.items.filter(
+        (item) => item.requiredRole === undefined || role >= item.requiredRole
+      )
+      return items.length === group.items.length ? group : { ...group, items }
+    })
+}
 
 /**
  * Root navigation groups for the application sidebar.
  *
  * These are shown when the URL does not match any nested sidebar view
- * registered in `layout/lib/sidebar-view-registry.ts`.
+ * registered in `layout/lib/sidebar-view-registry.ts`, narrowed to the
+ * signed-in role.
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const userRole = useAuthStore((s) => s.auth.user?.role) ?? ROLE.GUEST
+  const navGroups: NavGroup[] = [
+    {
+      id: 'general',
+      title: t('General'),
+      items: [
+        {
+          title: t('Explore'),
+          url: '/explore/models',
+          activeUrls: ['/pricing'],
+          icon: Compass,
+        },
+        {
+          title: t('Overview'),
+          url: '/dashboard/overview',
+          icon: Activity,
+        },
+        {
+          title: t('Dashboard'),
+          url: '/dashboard/models',
+          icon: LayoutDashboard,
+        },
+        {
+          title: t('API Keys'),
+          url: '/keys',
+          icon: Key,
+        },
+        {
+          title: t('Usage Logs'),
+          url: '/usage-logs/common',
+          icon: FileText,
+        },
+        {
+          title: t('Audit Logs'),
+          url: '/usage-logs/audit',
+          icon: ClipboardList,
+          requiredRole: ROLE.ADMIN,
+        },
+        {
+          title: t('Task Logs'),
+          url: '/usage-logs/task',
+          activeUrls: ['/usage-logs/drawing'],
+          configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
+          icon: ListTodo,
+          requiredRole: ROLE.ADMIN,
+        },
+      ],
+    },
+    {
+      id: 'personal',
+      title: t('Personal'),
+      items: [
+        {
+          title: t('Wallet'),
+          url: '/wallet',
+          icon: Wallet,
+        },
+        {
+          title: t('Profile'),
+          url: '/profile',
+          icon: User,
+        },
+        {
+          title: t('Security & Access'),
+          url: '/security',
+          icon: ShieldCheck,
+        },
+      ],
+    },
+    {
+      id: 'admin',
+      title: t('Admin'),
+      items: [
+        {
+          title: t('Channels'),
+          url: '/channels',
+          icon: Radio,
+        },
+        {
+          title: t('Models'),
+          url: '/models/metadata',
+          icon: Box,
+        },
+        {
+          title: t('Users'),
+          url: '/users',
+          icon: Users,
+        },
+        {
+          title: t('Redemption Codes'),
+          url: '/redemption-codes',
+          icon: Ticket,
+        },
+        {
+          title: t('Subscriptions'),
+          url: '/subscriptions',
+          icon: CreditCard,
+        },
+        {
+          title: t('System Info'),
+          url: '/system-info',
+          icon: ServerCog,
+          requiredRole: ROLE.SUPER_ADMIN,
+        },
+        {
+          title: t('Task Plugins'),
+          url: '/task-plugins',
+          icon: PlugZap,
+          requiredRole: ROLE.SUPER_ADMIN,
+        },
+        {
+          title: t('System Settings'),
+          url: '/system-settings/site',
+          activeUrls: ['/system-settings'],
+          icon: Settings,
+        },
+      ],
+    },
+  ]
 
-  return {
-    navGroups: [
-      {
-        id: 'chat',
-        title: t('Chat'),
-        items: [
-          {
-            title: t('Playground'),
-            url: '/playground',
-            icon: FlaskConical,
-          },
-          {
-            title: t('Chat'),
-            icon: MessageSquare,
-            type: 'chat-presets',
-          },
-        ],
-      },
-      {
-        id: 'general',
-        title: t('General'),
-        items: [
-          {
-            title: t('Overview'),
-            url: '/dashboard/overview',
-            icon: Activity,
-          },
-          {
-            title: t('Dashboard'),
-            url: '/dashboard/models',
-            icon: LayoutDashboard,
-          },
-          {
-            title: t('API Keys'),
-            url: '/keys',
-            icon: Key,
-          },
-          {
-            title: t('Usage Logs'),
-            url: '/usage-logs/common',
-            icon: FileText,
-          },
-          {
-            title: t('Audit Logs'),
-            url: '/usage-logs/audit',
-            icon: ClipboardList,
-          },
-          {
-            title: t('Task Logs'),
-            url: '/usage-logs/task',
-            activeUrls: ['/usage-logs/drawing'],
-            configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
-            icon: ListTodo,
-          },
-        ],
-      },
-      {
-        id: 'personal',
-        title: t('Personal'),
-        items: [
-          {
-            title: t('Wallet'),
-            url: '/wallet',
-            icon: Wallet,
-          },
-          {
-            title: t('Profile'),
-            url: '/profile',
-            icon: User,
-          },
-          {
-            title: t('Security & Access'),
-            url: '/security',
-            icon: ShieldCheck,
-          },
-        ],
-      },
-      {
-        id: 'admin',
-        title: t('Admin'),
-        items: [
-          {
-            title: t('Channels'),
-            url: '/channels',
-            icon: Radio,
-          },
-          {
-            title: t('Models'),
-            url: '/models/metadata',
-            icon: Box,
-          },
-          {
-            title: t('Users'),
-            url: '/users',
-            icon: Users,
-          },
-          {
-            title: t('Redemption Codes'),
-            url: '/redemption-codes',
-            icon: Ticket,
-          },
-          {
-            title: t('Subscriptions'),
-            url: '/subscriptions',
-            icon: CreditCard,
-          },
-          {
-            title: t('System Info'),
-            url: '/system-info',
-            icon: ServerCog,
-            requiredRole: ROLE.SUPER_ADMIN,
-          },
-          {
-            title: t('Task Plugins'),
-            url: '/task-plugins',
-            icon: PlugZap,
-            requiredRole: ROLE.SUPER_ADMIN,
-          },
-          {
-            title: t('System Settings'),
-            url: '/system-settings/site',
-            activeUrls: ['/system-settings'],
-            icon: Settings,
-          },
-        ],
-      },
-    ],
-  }
+  return { navGroups: filterNavGroupsByRole(navGroups, userRole) }
 }

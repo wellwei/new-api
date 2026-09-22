@@ -56,6 +56,10 @@ export default defineConfig(({ envMode }) => {
       entry: {
         index: './src/main.tsx',
       },
+      // The console's own documentation ships as markdown and is imported with
+      // `?raw` (see features/explore/wiki). `.md` is not a default static asset
+      // type, so it must be declared here or the import resolves to nothing.
+      assetsInclude: /\.md$/,
     },
     resolve: {
       alias: {

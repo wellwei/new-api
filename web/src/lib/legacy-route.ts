@@ -25,7 +25,6 @@ const legacyConsoleRoutes: Record<string, string> = {
   '/console/subscription': '/subscriptions',
   '/console/channel': '/channels',
   '/console/token': '/keys',
-  '/console/playground': '/playground',
   '/console/redemption': '/redemption-codes',
   '/console/user': '/users',
   '/console/personal': '/profile',
@@ -86,13 +85,8 @@ export function resolveLegacyRoute(rawHref: string): string | null {
     const target = legacySettingsTabs[tab] ?? '/system-settings'
     return buildTargetHref(target, source)
   }
-  if (pathname === '/console/chat') {
-    return buildTargetHref('/dashboard', source)
-  }
-  if (pathname.startsWith('/console/chat/')) {
-    const chatID = pathname.slice('/console/chat/'.length)
-    return buildTargetHref(chatID ? `/chat/${chatID}` : '/dashboard', source)
-  }
+  // The console has no chat or playground surfaces any more; both legacy
+  // prefixes land on the console home through the generic rule below.
 
   const target = legacyConsoleRoutes[pathname]
   if (target) return buildTargetHref(target, source)

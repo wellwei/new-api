@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { LayoutDashboard } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -33,6 +33,7 @@ import { IconBadge } from '@/components/ui/icon-badge'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 type SidebarModuleConfig = {
@@ -46,8 +47,19 @@ type SectionDef = {
   key: string
   title: string
   description: string
-  modules: { key: string; title: string; description: string }[]
+  modules: {
+    key: string
+    title: string
+    description: string
+    adminOnly?: boolean
+  }[]
 }
+
+/**
+ * The console areas this card configures, with each module's navigation entry
+ * gated the same way the sidebar gates it: `adminOnly` modules are dropped for
+ * regular users, who must not be offered a switch for a page they cannot reach.
+ */
 
 export function SidebarModulesCard() {
   const { t } = useTranslation()
@@ -55,85 +67,81 @@ export function SidebarModulesCard() {
   const [config, setConfig] = useState<SidebarModulesConfig>({})
   const currentUser = useAuthStore((s) => s.auth.user)
   const setUser = useAuthStore((s) => s.auth.setUser)
+  const isAdmin = (currentUser?.role ?? 0) >= ROLE.ADMIN
 
-  const sectionDefs: SectionDef[] = [
-    {
-      key: 'chat',
-      title: t('Chat Area'),
-      description: t('Playground and chat functions'),
-      modules: [
-        {
-          key: 'playground',
-          title: t('Playground'),
-          description: t('AI model testing environment'),
-        },
-        {
-          key: 'chat',
-          title: t('Chat'),
-          description: t('Chat session management'),
-        },
-      ],
-    },
-    {
-      key: 'console',
-      title: t('Console Area'),
-      description: t('Data management and log viewing'),
-      modules: [
-        {
-          key: 'detail',
-          title: t('Dashboard'),
-          description: t('System data statistics'),
-        },
-        {
-          key: 'token',
-          title: t('Token Management'),
-          description: t('API token management'),
-        },
-        {
-          key: 'log',
-          title: t('Usage Logs'),
-          description: t('API usage records'),
-        },
-        {
-          key: 'audit',
-          title: t('Audit Logs'),
-          description: t('Login, security and access records'),
-        },
-        {
-          key: 'midjourney',
-          title: t('Drawing Logs'),
-          description: t('Drawing task records'),
-        },
-        {
-          key: 'task',
-          title: t('Task Logs'),
-          description: t('System task records'),
-        },
-      ],
-    },
-    {
-      key: 'personal',
-      title: t('Personal Center Area'),
-      description: t('User personal functions'),
-      modules: [
-        {
-          key: 'topup',
-          title: t('Wallet Management'),
-          description: t('Balance and top-up management'),
-        },
-        {
-          key: 'personal',
-          title: t('Personal Settings'),
-          description: t('Personal info settings'),
-        },
-        {
-          key: 'security',
-          title: t('Security & Access'),
-          description: t('Manage your security settings and account access'),
-        },
-      ],
-    },
-  ]
+  const sectionDefs = useMemo<SectionDef[]>(() => {
+    const defs: SectionDef[] = [
+      {
+        key: 'console',
+        title: t('Console Area'),
+        description: t('Data management and log viewing'),
+        modules: [
+          {
+            key: 'detail',
+            title: t('Dashboard'),
+            description: t('System data statistics'),
+          },
+          {
+            key: 'token',
+            title: t('Token Management'),
+            description: t('API token management'),
+          },
+          {
+            key: 'log',
+            title: t('Usage Logs'),
+            description: t('API usage records'),
+          },
+          {
+            key: 'audit',
+            title: t('Audit Logs'),
+            description: t('Login, security and access records'),
+            adminOnly: true,
+          },
+          {
+            key: 'midjourney',
+            title: t('Drawing Logs'),
+            description: t('Drawing task records'),
+            adminOnly: true,
+          },
+          {
+            key: 'task',
+            title: t('Task Logs'),
+            description: t('System task records'),
+            adminOnly: true,
+          },
+        ],
+      },
+      {
+        key: 'personal',
+        title: t('Personal Center Area'),
+        description: t('User personal functions'),
+        modules: [
+          {
+            key: 'topup',
+            title: t('Wallet Management'),
+            description: t('Balance and top-up management'),
+          },
+          {
+            key: 'personal',
+            title: t('Personal Settings'),
+            description: t('Personal info settings'),
+          },
+          {
+            key: 'security',
+            title: t('Security & Access'),
+            description: t('Manage your security settings and account access'),
+          },
+        ],
+      },
+    ]
+
+    if (isAdmin) return defs
+
+    return defs.map((section) => ({
+      ...section,
+      modules: section.modules.filter((mod) => !mod.adminOnly),
+    }))
+  }, [t, isAdmin])
 
   const loadConfig = useCallback(async () => {
     try {
@@ -153,8 +161,7 @@ export function SidebarModulesCard() {
     } catch {
       /* ignore */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [sectionDefs])
 
   useEffect(() => {
     loadConfig()

@@ -16,10 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { Home } from '@/features/home'
+import { DASHBOARD_DEFAULT_SECTION } from '@/features/dashboard/section-registry'
 
+/**
+ * The site root is the console, not a marketing page: visitors land on the
+ * console home and the authenticated layout sends anonymous ones to sign-in
+ * with `/` as the return target.
+ */
 export const Route = createFileRoute('/')({
-  component: Home,
+  beforeLoad: () => {
+    throw redirect({
+      to: '/dashboard/$section',
+      params: { section: DASHBOARD_DEFAULT_SECTION },
+    })
+  },
 })

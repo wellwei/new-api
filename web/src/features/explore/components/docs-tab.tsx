@@ -16,12 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export { PricingSidebar } from './pricing-sidebar'
-export { PricingToolbar } from './pricing-toolbar'
-export { ModelCard } from './model-card'
-export { ModelCardGrid } from './model-card-grid'
-export { LoadingSkeleton } from './loading-skeleton'
-export { EmptyState } from './empty-state'
-export { SearchBar } from './search-bar'
-export { ModelDetailsContent, ModelDetailsDrawer } from './model-details'
-export { PricingTable } from './pricing-table'
+import { WikiReader } from './wiki-reader'
+
+/**
+ * Documentation tab: the console's own manual.
+ *
+ * The pages are markdown files under `features/explore/wiki/`, bundled at build
+ * time and rendered in place, so the manual ships with the version the reader
+ * is actually using and nobody is sent to another site. The `docs_link`
+ * setting that used to power an external link is deliberately not read here —
+ * see `docs/技术结论.md`「站内单页化」for why.
+ */
+export function DocsTab() {
+  return (
+    <div className='h-full min-h-0'>
+      <WikiReader />
+    </div>
+  )
+}

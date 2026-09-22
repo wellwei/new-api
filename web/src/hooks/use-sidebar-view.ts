@@ -17,13 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useLocation } from '@tanstack/react-router'
-import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
-import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
-import { ROLE } from '@/lib/roles'
-import { useAuthStore } from '@/stores/auth-store'
+import type { ResolvedSidebarView } from '@/components/layout/types'
 
 import { useSidebarConfig } from './use-sidebar-config'
 import { useSidebarData } from './use-sidebar-data'
@@ -36,9 +33,9 @@ const ROOT_VIEW_KEY = '__root'
  *
  * - Returns the matching nested {@link SidebarView} (with its nav
  *   groups) when the URL belongs to a registered drill-in workspace.
- * - Otherwise returns the root navigation, narrowed by:
- *     · admin-only group visibility (role-based);
- *     · `useSidebarConfig` (admin × user `sidebar_modules` overlay).
+ * - Otherwise returns the root navigation narrowed by `useSidebarConfig`
+ *   (admin × user `sidebar_modules` overlay). Role visibility is already
+ *   applied by `useSidebarData`.
  *
  * Nested views are intentionally NOT passed through `useSidebarConfig`
  * — those filters target known dashboard URLs only, and gating is
@@ -47,22 +44,8 @@ const ROOT_VIEW_KEY = '__root'
 export function useSidebarView(): ResolvedSidebarView {
   const { t } = useTranslation()
   const pathname = useLocation({ select: (l) => l.pathname })
-  const userRole = useAuthStore((s) => s.auth.user?.role)
   const rootSidebarData = useSidebarData()
-  const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
-
-  const rootNavGroups = useMemo<NavGroup[]>(() => {
-    const role = userRole ?? ROLE.GUEST
-    const isAdmin = role >= ROLE.ADMIN
-    return configFilteredRoot
-      .filter((group) => (group.id === 'admin' ? isAdmin : true))
-      .map((group) => {
-        const items = group.items.filter(
-          (item) => item.requiredRole === undefined || role >= item.requiredRole
-        )
-        return items.length === group.items.length ? group : { ...group, items }
-      })
-  }, [configFilteredRoot, userRole])
+  const rootNavGroups = useSidebarConfig(rootSidebarData.navGroups)
 
   const view = resolveSidebarView(pathname)
 

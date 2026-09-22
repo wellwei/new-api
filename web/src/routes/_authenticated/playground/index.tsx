@@ -18,23 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { Main } from '@/components/layout'
-import { Playground } from '@/features/playground'
-import { isSidebarModuleEnabled } from '@/lib/nav-modules'
-
+/**
+ * The playground was retired from the console. The address redirects to the
+ * console home so existing links and bookmarks still land somewhere useful.
+ */
 export const Route = createFileRoute('/_authenticated/playground/')({
   beforeLoad: () => {
-    if (!isSidebarModuleEnabled('chat', 'playground')) {
-      throw redirect({ to: '/dashboard' })
-    }
+    throw redirect({ to: '/dashboard' })
   },
-  component: PlaygroundPage,
 })
-
-function PlaygroundPage() {
-  return (
-    <Main className='p-0'>
-      <Playground />
-    </Main>
-  )
-}

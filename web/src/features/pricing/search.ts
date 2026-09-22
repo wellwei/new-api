@@ -16,23 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
-
-import { pricingSearchSchema } from '@/features/pricing/search'
+import z from 'zod'
 
 /**
- * The model square used to be a standalone public page. It now lives in the
- * console as the first tab of `/explore`, so the old address forwards there
- * instead of 404ing — old bookmarks keep working.
+ * Search contract of the model square.
+ *
+ * `model` names the model whose details are open; the square renders it in the
+ * details drawer, so a model can be linked to without leaving the page.
  */
-export const Route = createFileRoute('/pricing/')({
-  validateSearch: pricingSearchSchema,
-  beforeLoad: ({ search }) => {
-    throw redirect({
-      to: '/explore/$section',
-      params: { section: 'models' },
-      search,
-      replace: true,
-    })
-  },
+export const pricingSearchSchema = z.object({
+  search: z.string().optional(),
+  sort: z.string().optional(),
+  vendor: z.string().optional(),
+  group: z.string().optional(),
+  quotaType: z.string().optional(),
+  endpointType: z.string().optional(),
+  tag: z.string().optional(),
+  tokenUnit: z.enum(['M', 'K']).optional(),
+  view: z.enum(['card', 'table']).optional().catch(undefined),
+  rechargePrice: z.boolean().optional(),
+  model: z.string().optional(),
 })
+
+export type PricingSearch = z.infer<typeof pricingSearchSchema>

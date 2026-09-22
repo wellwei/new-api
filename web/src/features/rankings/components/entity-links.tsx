@@ -26,14 +26,14 @@ type EntityLinkBaseProps = {
 }
 
 type ModelLinkProps = EntityLinkBaseProps & {
-  /** model_name as it appears in the pricing API. Used as the route param. */
+  /** model_name as it appears in the pricing API. Opens its console drawer. */
   modelName: string
 }
 
 /**
- * Link wrapping a model name. Navigates to the existing model details
- * page (`/pricing/{modelName}`). Renders the model name itself by
- * default; pass `children` to wrap arbitrary content.
+ * Link wrapping a model name. Opens the model's details drawer in the
+ * console model square (`/explore/models?model={modelName}`). Renders the
+ * model name itself by default; pass `children` to wrap arbitrary content.
  *
  * A subtle persistent underline acts as the link affordance (so
  * clickability is obvious in lists with dozens of entries) and brightens
@@ -42,8 +42,9 @@ type ModelLinkProps = EntityLinkBaseProps & {
 export function ModelLink(props: ModelLinkProps) {
   return (
     <Link
-      to='/pricing/$modelId'
-      params={{ modelId: props.modelName }}
+      to='/explore/$section'
+      params={{ section: 'models' }}
+      search={{ model: props.modelName }}
       className={cn(
         'decoration-foreground/30 hover:decoration-foreground underline decoration-1 underline-offset-4 transition-colors',
         props.className
@@ -60,8 +61,8 @@ type VendorLinkProps = EntityLinkBaseProps & {
 }
 
 /**
- * Link wrapping a vendor name. Navigates to the pricing page filtered by
- * that vendor (`/pricing?vendor={vendor}`). Renders the vendor name
+ * Link wrapping a vendor name. Navigates to the model square filtered by
+ * that vendor (`/explore/models?vendor={vendor}`). Renders the vendor name
  * itself by default. Uses the same subtle persistent underline as
  * {@link ModelLink}, scaled for the smaller secondary text it usually
  * wraps.
@@ -69,7 +70,8 @@ type VendorLinkProps = EntityLinkBaseProps & {
 export function VendorLink(props: VendorLinkProps) {
   return (
     <Link
-      to='/pricing'
+      to='/explore/$section'
+      params={{ section: 'models' }}
       search={{ vendor: props.vendor }}
       className={cn(
         'hover:text-foreground underline decoration-current/40 decoration-1 underline-offset-2 transition-colors hover:decoration-current',
