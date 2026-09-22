@@ -247,30 +247,34 @@ export function Pricing() {
             </main>
           </div>
         </div>
-      </SectionPageLayout.Content>
 
-      {selectedModel && (
-        <ModelDetailsDrawer
-          open={Boolean(selectedModel)}
-          onOpenChange={(open) => {
-            if (!open) handleModelNameChange(null)
-          }}
-          model={selectedModel}
-          groupRatio={groupRatio || {}}
-          usableGroup={usableGroup || {}}
-          endpointMap={
-            (endpointMap as Record<
-              string,
-              { path?: string; method?: string }
-            >) || {}
-          }
-          autoGroups={autoGroups || []}
-          priceRate={priceRate ?? 1}
-          usdExchangeRate={usdExchangeRate ?? 1}
-          tokenUnit={tokenUnit}
-          showRechargePrice={showRechargePrice}
-        />
-      )}
+        {/* The drawer has to live inside a slot: `SectionPageLayout` renders
+            only its four named children and silently drops anything else, so
+            as a sibling of `.Content` it never appeared. It portals to the
+            body itself, so being inside the content area costs nothing. */}
+        {selectedModel && (
+          <ModelDetailsDrawer
+            open={Boolean(selectedModel)}
+            onOpenChange={(open) => {
+              if (!open) handleModelNameChange(null)
+            }}
+            model={selectedModel}
+            groupRatio={groupRatio || {}}
+            usableGroup={usableGroup || {}}
+            endpointMap={
+              (endpointMap as Record<
+                string,
+                { path?: string; method?: string }
+              >) || {}
+            }
+            autoGroups={autoGroups || []}
+            priceRate={priceRate ?? 1}
+            usdExchangeRate={usdExchangeRate ?? 1}
+            tokenUnit={tokenUnit}
+            showRechargePrice={showRechargePrice}
+          />
+        )}
+      </SectionPageLayout.Content>
     </SectionPageLayout>
   )
 }

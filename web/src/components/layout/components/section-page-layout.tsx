@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Children,
   isValidElement,
+  useEffect,
   useState,
   type ReactElement,
   type ReactNode,
@@ -49,6 +50,35 @@ function SectionPageLayoutBreadcrumb(_props: SlotProps) {
 }
 SectionPageLayoutBreadcrumb.displayName = 'SectionPageLayout.Breadcrumb'
 
+/**
+ * Name of the slot a child fills, or null when it fills none.
+ *
+ * A child that fills no slot never renders, and it used to vanish without
+ * trace — which is exactly how a details drawer placed next to
+ * `<SectionPageLayout.Content>` failed to open one day. Returning null here is
+ * what lets the layout report the mistake out loud instead.
+ */
+function slotNameOf(child: ReactElement): string | null {
+  for (const [name, marker] of Object.entries(SLOTS)) {
+    if (child.type === marker) return name
+  }
+  return null
+}
+
+const SLOTS = {
+  title: SectionPageLayoutTitle,
+  actions: SectionPageLayoutActions,
+  content: SectionPageLayoutContent,
+  breadcrumb: SectionPageLayoutBreadcrumb,
+}
+
+function describeChild(child: ReactElement): string {
+  const type = child.type
+  if (typeof type === 'string') return `<${type}>`
+  const named = type as { displayName?: string; name?: string }
+  return `<${named.displayName || named.name || 'unknown'}>`
+}
+
 export type SectionPageLayoutProps = {
   children: ReactNode
   fixedContent?: boolean
@@ -64,19 +94,43 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   let actions: ReactNode = null
   let content: ReactNode = null
   let breadcrumb: ReactNode = null
+  const ignored: string[] = []
 
   Children.forEach(props.children, (node) => {
     if (!isValidElement(node)) return
     const child = node as ReactElement<SlotProps>
-    if (child.type === SectionPageLayoutTitle) title = child.props.children
-    else if (child.type === SectionPageLayoutActions) {
-      actions = child.props.children
-    } else if (child.type === SectionPageLayoutContent) {
-      content = child.props.children
-    } else if (child.type === SectionPageLayoutBreadcrumb) {
-      breadcrumb = child.props.children
+    switch (slotNameOf(child)) {
+      case 'title':
+        title = child.props.children
+        break
+      case 'actions':
+        actions = child.props.children
+        break
+      case 'content':
+        content = child.props.children
+        break
+      case 'breadcrumb':
+        breadcrumb = child.props.children
+        break
+      default:
+        ignored.push(describeChild(child))
     }
   })
+
+  const ignoredKey = ignored.join(', ')
+
+  // Reported from an effect, not during render: the footer callback sets state
+  // on mount, so a render-phase warning would fire twice for one mistake.
+  useEffect(() => {
+    if (import.meta.env.DEV && ignoredKey) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[SectionPageLayout] ignoring ${ignoredKey}: only ` +
+          'Title / Actions / Content / Breadcrumb render. Move the element ' +
+          'inside one of those slots.'
+      )
+    }
+  }, [ignoredKey])
 
   return (
     <PageFooterProvider container={footerContainer}>
