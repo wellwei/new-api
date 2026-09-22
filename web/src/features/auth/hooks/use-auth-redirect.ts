@@ -25,10 +25,33 @@ import {
   sanitizeAuthRedirect,
 } from '@/features/auth/lib/auth-redirect'
 import { applyAuthBundle, isAuthBundle } from '@/lib/api'
+import { isOnboardingDone } from '@/lib/onboarding'
 import { AuthOperationError } from '@/lib/secure-verification'
 import { useAuthStore, type AuthBundle } from '@/stores/auth-store'
 
 import { isLoginChallenge } from '../secure-verification/api'
+
+/**
+ * Where a freshly signed-in account should land.
+ *
+ * An explicit `redirect` always wins — the reader asked for that page. Without
+ * one, an account that has never sent a request and has not been through (or
+ * dismissed) the wizard goes to `/onboarding`: registering drops you into an
+ * empty console otherwise, with nothing saying what to do first. Accounts that
+ * have already done either go to the console as before.
+ */
+export function resolvePostLoginPath(
+  user: { id?: number; request_count?: number },
+  redirectTo?: string
+): string {
+  const requested = sanitizeAuthRedirect(redirectTo, window.location.origin)
+  if (requested) return requested
+
+  const hasUsedApi = Number(user.request_count ?? 0) > 0
+  if (!hasUsedApi && !isOnboardingDone(user.id)) return '/onboarding'
+
+  return '/dashboard'
+}
 
 /**
  * Hook for handling authentication redirects and user data management
@@ -63,8 +86,7 @@ export function useAuthRedirect() {
         await i18n.changeLanguage(savedLang)
       }
 
-      const targetPath =
-        sanitizeAuthRedirect(redirectTo, window.location.origin) ?? '/dashboard'
+      const targetPath = resolvePostLoginPath(bundle.user, redirectTo)
       await navigate({ href: targetPath, replace: true })
     },
     [navigate, sessionID]

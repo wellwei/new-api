@@ -43,6 +43,7 @@ import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenti
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
+import { Route as AuthenticatedOnboardingIndexRouteImport } from './routes/_authenticated/onboarding/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedPricingIndexRouteImport } from './routes/_authenticated/pricing/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
@@ -248,6 +249,12 @@ const AuthenticatedModelsSectionRoute =
   AuthenticatedModelsSectionRouteImport.update({
     id: '/models/$section',
     path: '/models/$section',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOnboardingIndexRoute =
+  AuthenticatedOnboardingIndexRouteImport.update({
+    id: '/onboarding/',
+    path: '/onboarding/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedPlaygroundIndexRoute =
@@ -471,6 +478,7 @@ export interface FileRoutesByFullPath {
   '/docs/': typeof AuthenticatedDocsIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
+  '/onboarding/': typeof AuthenticatedOnboardingIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/pricing/': typeof AuthenticatedPricingIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
@@ -535,6 +543,7 @@ export interface FileRoutesByTo {
   '/docs': typeof AuthenticatedDocsIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
+  '/onboarding': typeof AuthenticatedOnboardingIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/pricing': typeof AuthenticatedPricingIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
@@ -603,6 +612,7 @@ export interface FileRoutesById {
   '/_authenticated/docs/': typeof AuthenticatedDocsIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
+  '/_authenticated/onboarding/': typeof AuthenticatedOnboardingIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/pricing/': typeof AuthenticatedPricingIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
@@ -670,6 +680,7 @@ export interface FileRouteTypes {
     | '/docs/'
     | '/keys/'
     | '/models/'
+    | '/onboarding/'
     | '/playground/'
     | '/pricing/'
     | '/profile/'
@@ -734,6 +745,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/keys'
     | '/models'
+    | '/onboarding'
     | '/playground'
     | '/pricing'
     | '/profile'
@@ -801,6 +813,7 @@ export interface FileRouteTypes {
     | '/_authenticated/docs/'
     | '/_authenticated/keys/'
     | '/_authenticated/models/'
+    | '/_authenticated/onboarding/'
     | '/_authenticated/playground/'
     | '/_authenticated/pricing/'
     | '/_authenticated/profile/'
@@ -1087,6 +1100,13 @@ declare module '@tanstack/react-router' {
       path: '/models/$section'
       fullPath: '/models/$section'
       preLoaderRoute: typeof AuthenticatedModelsSectionRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/onboarding/': {
+      id: '/_authenticated/onboarding/'
+      path: '/onboarding'
+      fullPath: '/onboarding/'
+      preLoaderRoute: typeof AuthenticatedOnboardingIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/playground/': {
@@ -1413,6 +1433,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDocsIndexRoute: typeof AuthenticatedDocsIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
+  AuthenticatedOnboardingIndexRoute: typeof AuthenticatedOnboardingIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedPricingIndexRoute: typeof AuthenticatedPricingIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
@@ -1443,6 +1464,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDocsIndexRoute: AuthenticatedDocsIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
+  AuthenticatedOnboardingIndexRoute: AuthenticatedOnboardingIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedPricingIndexRoute: AuthenticatedPricingIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,

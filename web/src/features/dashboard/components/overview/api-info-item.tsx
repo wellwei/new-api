@@ -16,30 +16,41 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Zap, ExternalLink, Gauge } from 'lucide-react'
+import { ExternalLink, Gauge, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
-import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
   getLatencyColorClass,
+  isRouteServed,
   openExternalSpeedTest,
 } from '@/features/dashboard/lib/api-info'
-import type { ApiInfoItem, PingStatus } from '@/features/dashboard/types'
-import { getBgColorClass } from '@/lib/colors'
+import type {
+  ApiInfoItem,
+  EndpointPingStatus,
+} from '@/features/dashboard/types'
 import { cn } from '@/lib/utils'
 
 interface ApiInfoItemProps {
   item: ApiInfoItem
-  status: PingStatus
+  /** Probe result, or undefined when this row has not been tested yet. */
+  status?: EndpointPingStatus
   onTest: (url: string) => void
+}
+
+/** Untested rows stay neutral: nothing is claimed about them yet. */
+function dotClassFor(status: EndpointPingStatus | undefined): string {
+  if (status === undefined || status.testing) return 'bg-muted-foreground/40'
+  return isRouteServed(status.status) ? 'bg-emerald-500' : 'bg-red-500'
 }
 
 export function ApiInfoItemComponent(props: ApiInfoItemProps) {
   const { t } = useTranslation()
   const item = props.item
   const status = props.status
+  const tested = status !== undefined && !status.testing
+  const served = isRouteServed(status?.status ?? null)
 
   return (
     <div className='group hover:bg-muted/40 flex items-center justify-between gap-2 px-3 py-2.5 transition-colors sm:gap-3 sm:px-5 sm:py-3'>
@@ -47,8 +58,9 @@ export function ApiInfoItemComponent(props: ApiInfoItemProps) {
         <span
           className={cn(
             'inline-block size-2 shrink-0 rounded-full',
-            getBgColorClass(item.color)
+            dotClassFor(status)
           )}
+          aria-hidden='true'
         />
 
         <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
@@ -67,28 +79,33 @@ export function ApiInfoItemComponent(props: ApiInfoItemProps) {
       </div>
 
       <div className='flex shrink-0 items-center gap-2'>
-        <div className='flex items-center'>
-          {status.testing && (
-            <StatusBadge
-              label={t('Testing...')}
-              variant='warning'
-              className='animate-pulse'
-              copyable={false}
-            />
+        <div className='flex min-w-16 items-center justify-end'>
+          {status?.testing && (
+            <span className='text-muted-foreground animate-pulse text-xs'>
+              {t('Testing...')}
+            </span>
           )}
-          {status.latency !== null && !status.testing && (
-            <StatusBadge
-              variant='success'
-              label={`${status.latency}${t('ms')}`}
+          {tested && status.error && (
+            <span className='text-destructive text-xs'>{t('Unreachable')}</span>
+          )}
+          {tested && !status.error && (
+            <span
               className={cn(
-                'font-mono font-medium',
-                getLatencyColorClass(status.latency)
+                'font-mono text-xs font-medium tabular-nums',
+                served
+                  ? getLatencyColorClass(status.latency ?? 0)
+                  : 'text-destructive'
               )}
-              copyable={false}
-            />
-          )}
-          {status.error && (
-            <StatusBadge label={t('N/A')} variant='neutral' copyable={false} />
+              title={
+                served
+                  ? t('The gateway answers on this path')
+                  : t('The gateway does not serve this path')
+              }
+            >
+              {served && status.latency !== null
+                ? `${status.latency}${t('ms')}`
+                : t('Missing')}
+            </span>
           )}
         </div>
 
@@ -97,12 +114,13 @@ export function ApiInfoItemComponent(props: ApiInfoItemProps) {
             variant='ghost'
             size='sm'
             onClick={() => props.onTest(item.url)}
-            disabled={status.testing}
+            disabled={status?.testing}
             className='size-7 p-0'
             title={t('Test Latency')}
+            aria-label={`${t('Test Latency')}: ${item.route}`}
           >
             <Zap
-              className={cn('size-3.5', status.testing && 'animate-pulse')}
+              className={cn('size-3.5', status?.testing && 'animate-pulse')}
             />
           </Button>
 

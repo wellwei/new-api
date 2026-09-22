@@ -16,33 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export {
-  cleanFilters,
-  buildQueryParams,
-  getSavedGranularity,
-  saveGranularity,
-  getDefaultDays,
-  getSavedChartPreferences,
-  saveChartPreferences,
-  buildDefaultDashboardFilters,
-} from './filters'
-export {
-  getLatencyColorClass,
-  probeEndpoint,
-  isRouteServed,
-  defaultApiInfoItems,
-  resolveApiInfoItems,
-  resolveGatewayBaseUrl,
-  openExternalSpeedTest,
-  getDefaultPingStatus,
-} from './api-info'
-export { processChartData, processUserChartData } from './charts'
-export {
-  buildDashboardFlowData,
-  buildFlowSankeySpec,
-  flowNodeFilterFromSankeyDatum,
-  flowSankeyDatumValue,
-  getFlowStages,
-} from './flow'
-export { safeDivide, calculateDashboardStats } from './stats'
-export { getPreviewText } from './text'
+import { createFileRoute } from '@tanstack/react-router'
+
+import { Onboarding } from '@/features/onboarding'
+
+export const Route = createFileRoute('/_authenticated/onboarding/')({
+  component: Onboarding,
+})

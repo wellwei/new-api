@@ -227,7 +227,18 @@ export interface PingStatus {
   error: boolean
 }
 
-export type PingStatusMap = Record<string, PingStatus>
+/**
+ * Probe result for one gateway endpoint.
+ *
+ * `status` is the HTTP status the gateway itself answered. The relay routes
+ * authenticate before anything else, so a 401 confirms the path exists — the
+ * status code, not the body, is what makes the probe meaningful.
+ */
+export interface EndpointPingStatus extends PingStatus {
+  status: number | null
+}
+
+export type PingStatusMap = Record<string, EndpointPingStatus>
 
 // ============================================================================
 // Chart Types
