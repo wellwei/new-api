@@ -83,6 +83,8 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 		UserId:          userId,
 		PlanId:          plan.Id,
 		Money:           plan.PriceAmount,
+		QuotaAmount:     plan.TotalAmount,
+		WalletCredit:    plan.WalletCredit,
 		TradeNo:         tradeNo,
 		PaymentMethod:   model.PaymentMethodWaffoPancake,
 		PaymentProvider: model.PaymentProviderWaffoPancake,

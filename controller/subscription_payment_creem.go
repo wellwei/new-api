@@ -90,6 +90,8 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		UserId:          userId,
 		PlanId:          plan.Id,
 		Money:           plan.PriceAmount,
+		QuotaAmount:     plan.TotalAmount,
+		WalletCredit:    plan.WalletCredit,
 		TradeNo:         referenceId,
 		PaymentMethod:   model.PaymentMethodCreem,
 		PaymentProvider: model.PaymentProviderCreem,

@@ -90,6 +90,8 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		UserId:          userId,
 		PlanId:          plan.Id,
 		Money:           plan.PriceAmount,
+		QuotaAmount:     plan.TotalAmount,
+		WalletCredit:    plan.WalletCredit,
 		TradeNo:         referenceId,
 		PaymentMethod:   model.PaymentMethodStripe,
 		PaymentProvider: model.PaymentProviderStripe,

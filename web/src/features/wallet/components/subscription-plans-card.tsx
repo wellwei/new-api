@@ -192,7 +192,8 @@ export function SubscriptionPlansCard({
 
   const hasActive = activeSubscriptions.length > 0
   const hasAny = allSubscriptions.length > 0
-  const isAvailable = loading || plans.length > 0 || hasAny
+  const isAvailable = loading || plans.length > 0
+  const walletMode = plans.length > 0 && plans.every((p) => p.plan.wallet_credit)
   const disablePref = !hasActive
   const isSubPref =
     billingPreference === 'subscription_first' ||
@@ -254,22 +255,22 @@ export function SubscriptionPlansCard({
     )
   }
 
-  if (plans.length === 0 && !hasAny) {
+  if (plans.length === 0) {
     return null
   }
 
   return (
     <>
       <TitledCard
-        title={t('Subscription Plans')}
-        description={t('Subscribe to a plan for model access')}
+        title={walletMode ? '钱包额度包' : t('Subscription Plans')}
+        description={walletMode ? '购买后一次性加入钱包，永久有效' : t('Subscribe to a plan for model access')}
         icon={<Crown className='h-4 w-4' />}
         iconTone='warning'
         disableHoverEffect
         contentClassName='space-y-4 sm:space-y-5'
       >
         {/* My subscriptions & billing preference */}
-        <div className='rounded-xl border p-3 sm:p-4'>
+        {!walletMode && <div className='rounded-xl border p-3 sm:p-4'>
           <div className='flex flex-wrap items-center justify-between gap-2.5 sm:gap-3'>
             <div className='flex min-w-0 flex-wrap items-center gap-2'>
               <span className='text-sm font-medium'>
@@ -520,7 +521,7 @@ export function SubscriptionPlansCard({
               {t('Subscribe to a plan for model access')}
             </p>
           )}
-        </div>
+        </div>}
 
         {/* Available plans grid */}
         {plans.length > 0 ? (
@@ -536,12 +537,14 @@ export function SubscriptionPlansCard({
               const reached = limit > 0 && count >= limit
 
               const benefits = [
-                `${t('Validity Period')}: ${formatDuration(plan, t)}`,
-                formatResetPeriod(plan, t) !== t('No Reset')
+                !plan.wallet_credit
+                  ? `${t('Validity Period')}: ${formatDuration(plan, t)}`
+                  : '购买后永久有效',
+                !plan.wallet_credit && formatResetPeriod(plan, t) !== t('No Reset')
                   ? `${t('Quota Reset')}: ${formatResetPeriod(plan, t)}`
                   : null,
                 totalAmount > 0
-                  ? `${t('Total Quota')}: ${formatQuota(totalAmount)}`
+                  ? `${plan.wallet_credit ? '入账额度' : t('Total Quota')}: ${formatQuota(totalAmount)}`
                   : `${t('Total Quota')}: ${t('Unlimited')}`,
                 limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
                 plan.upgrade_group
@@ -581,7 +584,7 @@ export function SubscriptionPlansCard({
 
                     <div className='py-2'>
                       <span className='text-primary text-2xl font-bold'>
-                        ${price}
+                        ¥{price}
                       </span>
                     </div>
 
@@ -619,7 +622,7 @@ export function SubscriptionPlansCard({
                           setPurchaseOpen(true)
                         }}
                       >
-                        {t('Subscribe Now')}
+                        {plan.wallet_credit ? '购买额度包' : t('Subscribe Now')}
                       </Button>
                     )}
                   </CardContent>

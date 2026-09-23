@@ -180,6 +180,8 @@ type SubscriptionPlan struct {
 
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
+	// 钱包额度包在购买时一次性入账，永久有效，不参与订阅扣费。
+	WalletCredit bool `json:"wallet_credit" gorm:"default:false"`
 
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
@@ -216,6 +218,9 @@ type SubscriptionOrder struct {
 	UserId int     `json:"user_id" gorm:"index"`
 	PlanId int     `json:"plan_id" gorm:"index"`
 	Money  float64 `json:"money"`
+	// 下单时冻结额度包规则，避免付款期间管理员改套餐导致到账额度变化。
+	QuotaAmount  int64 `json:"quota_amount" gorm:"type:bigint;default:0"`
+	WalletCredit bool  `json:"wallet_credit" gorm:"default:false"`
 
 	TradeNo         string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod   string `json:"payment_method" gorm:"type:varchar(50)"`
@@ -491,6 +496,9 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	if userId <= 0 {
 		return nil, errors.New("invalid user id")
 	}
+	if plan.WalletCredit && (plan.TotalAmount <= 0 || plan.TotalAmount > int64(common.MaxWalletQuota)) {
+		return nil, errors.New("钱包额度包的额度无效")
+	}
 	if plan.MaxPurchasePerUser > 0 {
 		var count int64
 		if err := tx.Model(&UserSubscription{}).
@@ -515,6 +523,19 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		lastReset = now.Unix()
 	}
 	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
+	if plan.WalletCredit {
+		upgradeGroup = ""
+		// 订单、额度与审计快照同一事务提交，失败时一起回滚。
+		result := tx.Model(&User{}).
+			Where("id = ? AND quota <= ?", userId, int64(common.MaxWalletQuota)-plan.TotalAmount).
+			Update("quota", gorm.Expr("quota + ?", plan.TotalAmount))
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil, errors.New("钱包余额超出上限或用户不存在")
+		}
+	}
 	prevGroup := ""
 	if upgradeGroup != "" {
 		currentGroup, err := getUserGroupByIdTx(tx, userId)
@@ -551,6 +572,14 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		CreatedAt:           common.GetTimestamp(),
 		UpdatedAt:           common.GetTimestamp(),
 	}
+	if plan.WalletCredit {
+		// 保留购买快照供审计和购买次数限制使用，不能再从它扣费或重置。
+		sub.AmountUsed = plan.TotalAmount
+		sub.Status = "credited"
+		sub.LastResetTime = 0
+		sub.NextResetTime = 0
+		sub.DowngradeGroup = ""
+	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
 	}
@@ -579,6 +608,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	var logMoney float64
 	var logPaymentMethod string
 	var upgradeGroup string
+	var walletCredit int64
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order SubscriptionOrder
 		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
@@ -597,6 +627,17 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err != nil {
 			return err
 		}
+		if order.WalletCredit {
+			// 钱包额度包按订单快照入账，不读付款后可能已修改的套餐金额。
+			plan.TotalAmount = order.QuotaAmount
+			plan.WalletCredit = true
+			plan.UpgradeGroup = ""
+			plan.DowngradeGroup = ""
+			plan.QuotaResetPeriod = SubscriptionResetNever
+		} else {
+			// 旧未完成订单仍按旧订阅规则结算，防止切换期间意外双发。
+			plan.WalletCredit = false
+		}
 		if !plan.Enabled {
 			// still allow completion for already purchased orders
 		}
@@ -609,6 +650,9 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		subscription, err := CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
 		if err != nil {
 			return err
+		}
+		if plan.WalletCredit {
+			walletCredit = plan.TotalAmount
 		}
 		if subscription.PrevUserGroup != "" {
 			upgradeGroup = strings.TrimSpace(subscription.UpgradeGroup)
@@ -636,11 +680,20 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	if err != nil {
 		return err
 	}
+	if walletCredit > 0 {
+		if err := cacheIncrUserQuota(logUserId, walletCredit); err != nil {
+			common.SysLog("failed to increase user quota cache after wallet package payment: " + err.Error())
+		}
+	}
 	if upgradeGroup != "" && logUserId > 0 {
 		refreshSubscriptionUserGroupCache(logUserId, "subscription payment completion")
 	}
 	if logUserId > 0 {
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
+		if walletCredit > 0 {
+			msg = fmt.Sprintf("钱包额度包购买成功，套餐: %s，支付金额: %.2f，入账额度: %d，支付方式: %s",
+				logPlanTitle, logMoney, walletCredit, logPaymentMethod)
+		}
 		RecordLog(logUserId, LogTypeTopup, msg)
 	}
 	return nil
@@ -717,6 +770,7 @@ func AdminBindSubscription(userId int, planId int, sourceNote string) (string, e
 		return "", err
 	}
 	groupChanged := false
+	var walletCredit int64
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		// 与 CompleteSubscriptionOrder 一致：先锁用户行，再做购买次数检查。
 		var userRow User
@@ -726,11 +780,19 @@ func AdminBindSubscription(userId int, planId int, sourceNote string) (string, e
 		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
 		if err == nil {
 			groupChanged = subscription.PrevUserGroup != ""
+			if plan.WalletCredit {
+				walletCredit = plan.TotalAmount
+			}
 		}
 		return err
 	})
 	if err != nil {
 		return "", err
+	}
+	if walletCredit > 0 {
+		if err := cacheIncrUserQuota(userId, walletCredit); err != nil {
+			common.SysLog("failed to increase user quota cache after admin wallet package: " + err.Error())
+		}
 	}
 	if groupChanged {
 		refreshSubscriptionUserGroupCache(userId, "admin subscription creation")
@@ -769,6 +831,10 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		}
 		if !plan.Enabled {
 			return errors.New("套餐未启用")
+		}
+		if plan.WalletCredit {
+			// 余额购买有可能用低价套餐反复增加余额，钱包额度包只允许真实支付或管理员发放。
+			return errors.New("钱包额度包不能使用余额购买")
 		}
 		if plan.PriceAmount < 0 {
 			return errors.New("套餐价格不能为负数")

@@ -70,7 +70,14 @@ func UserCheckin(userId int) (*Checkin, error) {
 	// 计算随机额度奖励
 	quotaAwarded := setting.MinQuota
 	if setting.MaxQuota > setting.MinQuota {
-		quotaAwarded = setting.MinQuota + rand.Intn(setting.MaxQuota-setting.MinQuota+1)
+		step := int(common.QuotaPerUnit)
+		if setting.WholeUnitRandom && step > 0 &&
+			setting.MinQuota%step == 0 && setting.MaxQuota%step == 0 {
+			// 按整元均匀抽取，避免显示为 ¥5.000002 之类的碎额。
+			quotaAwarded = setting.MinQuota + rand.Intn((setting.MaxQuota-setting.MinQuota)/step+1)*step
+		} else {
+			quotaAwarded = setting.MinQuota + rand.Intn(setting.MaxQuota-setting.MinQuota+1)
+		}
 	}
 
 	today := time.Now().Format("2006-01-02")

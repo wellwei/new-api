@@ -435,6 +435,11 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		return session, nil
 	}
 
+	if operation_setting.GetQuotaSetting().WalletOnlyBilling {
+		// 订阅购买的额度已一次性加入钱包，不能再从旧订阅池扣费。
+		return tryWallet()
+	}
+
 	switch pref {
 	case "subscription_only":
 		return trySubscription()

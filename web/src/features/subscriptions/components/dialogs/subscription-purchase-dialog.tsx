@@ -231,7 +231,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
       title={
         <>
           <Crown className='h-5 w-5' />
-          {t('Purchase Subscription')}
+          {plan.wallet_credit ? '购买钱包额度包' : t('Purchase Subscription')}
         </>
       }
       contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-md'
@@ -251,14 +251,14 @@ export function SubscriptionPurchaseDialog(props: Props) {
           </div>
           <div className='flex items-center justify-between'>
             <span className='text-muted-foreground text-sm'>
-              {t('Validity Period')}
+              {plan.wallet_credit ? '额度有效期' : t('Validity Period')}
             </span>
             <span className='flex items-center gap-1 text-sm'>
               <CalendarClock className='h-3.5 w-3.5' />
-              {formatDuration(plan, t)}
+              {plan.wallet_credit ? '永久有效' : formatDuration(plan, t)}
             </span>
           </div>
-          {formatResetPeriod(plan, t) !== t('No Reset') && (
+          {!plan.wallet_credit && formatResetPeriod(plan, t) !== t('No Reset') && (
             <div className='flex justify-between'>
               <span className='text-muted-foreground text-sm'>
                 {t('Reset Period')}
@@ -268,7 +268,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
           )}
           <div className='flex items-center justify-between'>
             <span className='text-muted-foreground text-sm'>
-              {t('Plan Quota')}
+              {plan.wallet_credit ? '入账额度' : t('Plan Quota')}
             </span>
             <span className='flex items-center gap-1 text-sm'>
               <Package className='h-3.5 w-3.5' />
@@ -286,7 +286,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
           <Separator />
           <div className='flex items-center justify-between'>
             <span className='text-sm font-medium'>{t('Amount Due')}</span>
-            <span className='text-primary text-lg font-bold'>${price}</span>
+            <span className='text-primary text-lg font-bold'>¥{price}</span>
           </div>
         </div>
 
@@ -299,7 +299,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
           </Alert>
         )}
 
-        <div className='flex flex-col gap-2 rounded-md border p-3'>
+        {!plan.wallet_credit && <div className='flex flex-col gap-2 rounded-md border p-3'>
           <div className='flex items-center justify-between gap-2 text-xs'>
             <span className='text-muted-foreground'>{t('Required')}</span>
             <span>{formatQuota(balanceCost)}</span>
@@ -330,7 +330,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
           >
             {t('Pay with Balance')}
           </Button>
-        </div>
+        </div>}
 
         {hasAnyPayment && (
           <div className='space-y-3'>

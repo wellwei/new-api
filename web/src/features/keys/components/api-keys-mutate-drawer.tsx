@@ -441,6 +441,16 @@ export function ApiKeysMutateDrawer({
                         placeholder={t('Select a group')}
                       />
                     </FormControl>
+                    {selectedGroup === 'cline-public' && (
+                      <FormDescription>
+                        Cline 公益池按当前可用模型免费调用，令牌额度为零也能用；容量不足时不会自动改走收费渠道。
+                      </FormDescription>
+                    )}
+                    {selectedGroup === 'default' && (
+                      <FormDescription>
+                        标准模型从钱包扣费；与公益池同名的模型在此分组仍按原价计费。
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
