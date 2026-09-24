@@ -136,9 +136,22 @@ describe('Lobe icons', () => {
         'OpenAI',
         'Claude.Color',
         'SGLang',
+        'Stealth',
         'Sub2API',
         'Wan',
       ])
     )
+  })
+
+  it('draws the Stealth placeholder inline so currentColor follows the theme', () => {
+    const { container } = render(getLobeIcon('Stealth', 28))
+    // <img src> would rasterize the SVG in its own document, where currentColor
+    // has nothing to inherit from; an inline <svg> keeps the theme color.
+    const svg = container.querySelector('svg')
+    expect(svg).not.toBeNull()
+    expect(svg).toHaveAttribute('width', '28')
+    expect(svg).toHaveAttribute('aria-hidden', 'true')
+    expect(svg?.querySelectorAll('path[fill="currentColor"]')).toHaveLength(2)
+    expect(container.querySelector('img')).toBeNull()
   })
 })
