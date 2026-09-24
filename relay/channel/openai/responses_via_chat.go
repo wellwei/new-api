@@ -119,11 +119,11 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		var errorResp dto.OpenAITextResponse
 		if err := common.UnmarshalJsonStr(data, &errorResp); err == nil {
 			if oaiError := errorResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
-				if failResponsesStream(fmt.Errorf("%s", oaiError.Message)) {
-					sr.Stop(streamErr)
-					return
-				}
+				// Assign before sr.Stop: streamErr starts as a typed-nil
+				// *NewAPIError, and passing that into Stop's error interface
+				// would panic inside StreamResult.Error.
 				streamErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
+				failResponsesStream(fmt.Errorf("%s", oaiError.Message))
 				sr.Stop(streamErr)
 				return
 			}

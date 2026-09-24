@@ -25,15 +25,27 @@ func (r *StreamResult) Error(err error) {
 	if err == nil {
 		return
 	}
-	r.status.RecordError(err.Error())
 	var apiErr *types.NewAPIError
-	if errors.As(err, &apiErr) {
+	isAPIErr := errors.As(err, &apiErr)
+	if isAPIErr && apiErr == nil {
+		// A typed-nil *NewAPIError makes the error interface non-nil while
+		// every method on it is a nil dereference; classify nothing.
+		return
+	}
+	r.status.RecordError(err.Error())
+	if isAPIErr {
 		r.status.MarkFailed(string(apiErr.GetErrorCode()), apiErr.ToOpenAIError().Type, apiErr.StatusCode)
 	}
 }
 
 // Stop records a fatal error and marks the stream to stop after this chunk.
 func (r *StreamResult) Stop(err error) {
+	var apiErr *types.NewAPIError
+	if errors.As(err, &apiErr) && apiErr == nil {
+		// Normalize typed-nil *NewAPIError to plain nil so EndError consumers
+		// never receive a non-nil interface wrapping a nil pointer.
+		err = nil
+	}
 	r.Error(err)
 	r.status.SetEndReason(relaycommon.StreamEndReasonHandlerStop, err)
 	r.stopped = true
