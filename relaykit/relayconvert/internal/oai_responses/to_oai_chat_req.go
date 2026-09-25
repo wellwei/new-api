@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/internal/convdiag"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
+	"github.com/QuantumNous/new-api/relaykit/types"
 )
 
 const (
@@ -19,6 +20,7 @@ const (
 	responsesInputTypeFunctionCallOutput = "function_call_output"
 	responsesInputTypeCustomToolCall     = "custom_tool_call"
 	responsesInputTypeCustomToolOutput   = "custom_tool_call_output"
+	responsesInputTypeReasoning          = "reasoning"
 )
 
 const (
@@ -39,7 +41,7 @@ func ResponsesRequestToChatCompletionsRequest(ctx context.Context, req *dto.Open
 		return nil, err
 	}
 
-	messages, err := responsesRequestMessagesToChat(req)
+	messages, err := responsesRequestMessagesToChat(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +142,7 @@ func ValidateRequestChatUnsupportedFields(req *dto.OpenAIResponsesRequest) error
 	return validateResponsesRequestChatUnsupportedFields(req)
 }
 
-func responsesRequestMessagesToChat(req *dto.OpenAIResponsesRequest) ([]dto.Message, error) {
+func responsesRequestMessagesToChat(ctx context.Context, req *dto.OpenAIResponsesRequest) ([]dto.Message, error) {
 	messages := make([]dto.Message, 0)
 	if rawJSONPresent(req.Instructions) {
 		instructions, err := responsesJSONString(req.Instructions)
@@ -170,16 +172,26 @@ func responsesRequestMessagesToChat(req *dto.OpenAIResponsesRequest) ([]dto.Mess
 			return nil, fmt.Errorf("invalid input array: %w", err)
 		}
 		// Chat Completions requires the tool messages answering one assistant tool_calls
-		// batch to stay contiguous, so media hoisted out of function_call_output items is
-		// held back and emitted as a single user message once the batch ends.
+		// batch to stay contiguous, so media hoisted out of tool output items is held back
+		// and emitted as a single user message once the batch ends.
 		var pendingMedia []any
+		reasoningItems := 0
 		for _, item := range items {
 			itemType := strings.TrimSpace(kitutil.Interface2String(item["type"]))
-			if len(pendingMedia) > 0 && itemType != responsesInputTypeFunctionCallOutput {
+			if len(pendingMedia) > 0 && itemType != responsesInputTypeFunctionCallOutput && itemType != responsesInputTypeCustomToolOutput {
 				messages = append(messages, dto.Message{Role: "user", Content: pendingMedia})
 				pendingMedia = nil
 			}
-			nextMessages, media, err := responsesInputItemToChatMessages(item, messages)
+			// Reasoning items replay the model's own prior thinking. Chat Completions cannot
+			// represent them, and a bare reasoning item has neither role nor content, so letting
+			// it fall into the default branch fabricates an empty user message that chat
+			// upstreams reject (observed as 400 empty content on Vercel/Cline and 503 code 11151
+			// on Tencent WorkBuddy). Drop them and surface one aggregated diagnostic.
+			if itemType == responsesInputTypeReasoning {
+				reasoningItems++
+				continue
+			}
+			nextMessages, media, err := responsesInputItemToChatMessages(ctx, item, messages)
 			if err != nil {
 				return nil, err
 			}
@@ -189,6 +201,15 @@ func responsesRequestMessagesToChat(req *dto.OpenAIResponsesRequest) ([]dto.Mess
 		if len(pendingMedia) > 0 {
 			messages = append(messages, dto.Message{Role: "user", Content: pendingMedia})
 		}
+		if reasoningItems > 0 {
+			convdiag.Add(ctx, types.ConversionDiagnostic{
+				Code:     "dropped_reasoning_input_items",
+				Message:  fmt.Sprintf("dropped %d reasoning input item(s): chat completions cannot represent model reasoning", reasoningItems),
+				Severity: types.ConversionDiagnosticInfo,
+				From:     types.RelayFormatOpenAIResponses,
+				To:       types.RelayFormatOpenAI,
+			})
+		}
 		return messages, nil
 	default:
 		return nil, fmt.Errorf("unsupported responses input type %q", kitutil.GetJsonType(req.Input))
@@ -196,9 +217,9 @@ func responsesRequestMessagesToChat(req *dto.OpenAIResponsesRequest) ([]dto.Mess
 }
 
 // responsesInputItemToChatMessages appends the Chat messages for one Responses input item.
-// The second result carries media content parts hoisted out of a function_call_output item,
-// already in Chat shape; the caller decides where that user message lands.
-func responsesInputItemToChatMessages(item map[string]any, messages []dto.Message) ([]dto.Message, []any, error) {
+// The second result carries media content parts hoisted out of a tool output item, already in
+// Chat shape; the caller decides where that user message lands.
+func responsesInputItemToChatMessages(ctx context.Context, item map[string]any, messages []dto.Message) ([]dto.Message, []any, error) {
 	itemType := strings.TrimSpace(kitutil.Interface2String(item["type"]))
 	switch itemType {
 	case responsesInputTypeFunctionCall:
@@ -213,7 +234,7 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 			return nil, nil, err
 		}
 		return appendToolCallToLastAssistant(messages, toolCall), nil, nil
-	case responsesInputTypeFunctionCallOutput:
+	case responsesInputTypeFunctionCallOutput, responsesInputTypeCustomToolOutput:
 		callID := strings.TrimSpace(kitutil.Interface2String(item["call_id"]))
 		content, media := responsesToolOutputToChat(item["output"])
 		return append(messages, dto.Message{Role: "tool", ToolCallId: callID, Content: content}), media, nil
@@ -227,7 +248,34 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 	if err != nil {
 		return nil, nil, err
 	}
+	if isEmptyChatContent(content) {
+		// An empty message is rejected outright by chat upstreams (OpenAI, Vercel/Cline and
+		// Tencent WorkBuddy all 4xx on empty content). Drop it here instead of forwarding a
+		// doomed request. Tool messages never reach this branch, so tool_call pairing stays
+		// intact, and assistant tool_calls are accumulated in their own cases above.
+		convdiag.Add(ctx, types.ConversionDiagnostic{
+			Code:     "dropped_empty_input_item",
+			Message:  fmt.Sprintf("dropped input item of type %q with role %q: converted content is empty", itemType, role),
+			Severity: types.ConversionDiagnosticWarning,
+			From:     types.RelayFormatOpenAIResponses,
+			To:       types.RelayFormatOpenAI,
+		})
+		return messages, nil, nil
+	}
 	return append(messages, dto.Message{Role: role, Content: content}), nil, nil
+}
+
+func isEmptyChatContent(content any) bool {
+	switch value := content.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(value) == ""
+	case []any:
+		return len(value) == 0
+	default:
+		return false
+	}
 }
 
 func responsesInputContentToChatContent(content any) (any, error) {

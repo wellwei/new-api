@@ -8,6 +8,7 @@ import (
 type ConversionDiagnosticSeverity string
 
 const (
+	ConversionDiagnosticInfo    ConversionDiagnosticSeverity = "info"
 	ConversionDiagnosticWarning ConversionDiagnosticSeverity = "warning"
 	ConversionDiagnosticError   ConversionDiagnosticSeverity = "error"
 )

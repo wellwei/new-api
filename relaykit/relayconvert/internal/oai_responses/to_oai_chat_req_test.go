@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/internal/convdiag"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -509,4 +511,77 @@ func mustRawMessage(t *testing.T, value any) []byte {
 	raw, err := kitutil.Marshal(value)
 	require.NoError(t, err)
 	return raw
+}
+
+func TestResponsesRequestToChatCompletionsRequestDropsReasoningItems(t *testing.T) {
+	ctx, collector := convdiag.WithCollector(context.Background())
+	got, err := ResponsesRequestToChatCompletionsRequest(ctx, &dto.OpenAIResponsesRequest{
+		Model: "gpt-test",
+		Input: mustRawMessage(t, []map[string]any{
+			{"type": "message", "role": "user", "content": "hi"},
+			{"type": "reasoning", "id": "rs_1", "summary": []any{}},
+			{"type": "message", "role": "assistant", "content": "hello"},
+			{"type": "reasoning", "id": "rs_2", "summary": []any{map[string]any{"type": "summary_text", "text": "thinking"}}},
+			{"type": "message", "role": "user", "content": "and now?"},
+		}),
+	})
+	require.NoError(t, err)
+
+	roles := make([]string, 0, len(got.Messages))
+	for _, message := range got.Messages {
+		roles = append(roles, message.Role)
+		assert.NotEmpty(t, message.StringContent(), "no message may carry empty content")
+	}
+	assert.Equal(t, []string{"user", "assistant", "user"}, roles)
+
+	diagnostics := collector.Diagnostics()
+	require.Len(t, diagnostics, 1)
+	assert.Equal(t, "dropped_reasoning_input_items", diagnostics[0].Code)
+	assert.Contains(t, diagnostics[0].Message, "2 reasoning input item(s)")
+}
+
+func TestResponsesRequestToChatCompletionsRequestCustomToolCallOutputBecomesToolMessage(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(context.Background(), &dto.OpenAIResponsesRequest{
+		Model: "gpt-test",
+		Input: mustRawMessage(t, []map[string]any{
+			{"type": "custom_tool_call", "call_id": "ctc_1", "name": "run_query", "input": "SELECT 1"},
+			{"type": "custom_tool_call_output", "call_id": "ctc_1", "output": "1"},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 2)
+	assistant := got.Messages[0]
+	assert.Equal(t, "assistant", assistant.Role)
+	toolCalls := assistant.ParseToolCalls()
+	require.Len(t, toolCalls, 1)
+	assert.Equal(t, "run_query", toolCalls[0].Function.Name)
+	toolMessage := got.Messages[1]
+	assert.Equal(t, "tool", toolMessage.Role)
+	assert.Equal(t, "ctc_1", toolMessage.ToolCallId)
+	assert.Equal(t, "1", toolMessage.StringContent())
+}
+
+func TestResponsesRequestToChatCompletionsRequestDropsEmptyContentItems(t *testing.T) {
+	ctx, collector := convdiag.WithCollector(context.Background())
+	got, err := ResponsesRequestToChatCompletionsRequest(ctx, &dto.OpenAIResponsesRequest{
+		Model: "gpt-test",
+		Input: mustRawMessage(t, []map[string]any{
+			{"type": "message", "role": "user", "content": ""},
+			{"type": "item_reference", "id": "item_1"},
+			{"type": "message", "role": "user", "content": "real question"},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 1)
+	assert.Equal(t, "user", got.Messages[0].Role)
+	assert.Equal(t, "real question", got.Messages[0].StringContent())
+
+	diagnostics := collector.Diagnostics()
+	require.Len(t, diagnostics, 2)
+	for _, diagnostic := range diagnostics {
+		assert.Equal(t, "dropped_empty_input_item", diagnostic.Code)
+		assert.Equal(t, types.ConversionDiagnosticWarning, diagnostic.Severity)
+	}
 }
