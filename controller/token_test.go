@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -532,6 +533,9 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	}
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", body, 1)
+	// TokenAuth/authHelper always write the user group into the context in
+	// production; mirror that so group validation needs no DB round trip.
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
 	UpdateToken(ctx)
 
 	response := decodeAPIResponse(t, recorder)

@@ -87,6 +87,28 @@ func getTokenRequestUserGroup(c *gin.Context) (string, error) {
 	return model.GetUserGroup(c.GetInt("id"), false)
 }
 
+// validateTokenGroupRequest is the server-side counterpart of TokenAuth's
+// request-time usable-group check. Without it, any group that exists in
+// UserUsableGroups can be attached to a token through the raw API regardless
+// of the owner's own group, and TokenAuth will then honor it at request time.
+// An empty group means "follow the owner's group" and is always allowed, and
+// "auto" is validated group-by-group by setTokenAutoGroups instead.
+func validateTokenGroupRequest(c *gin.Context, group string) bool {
+	if group == "" || group == "auto" {
+		return true
+	}
+	userGroup, err := getTokenRequestUserGroup(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if !service.IsUserSelectableGroup(userGroup, group) {
+		common.ApiErrorMsg(c, fmt.Sprintf("无权使用分组 %s", group))
+		return false
+	}
+	return true
+}
+
 func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) bool {
 	if len(groups) == 0 {
 		if err := token.SetAutoGroups(nil); err != nil {
@@ -320,6 +342,9 @@ func AddToken(c *gin.Context) {
 			return
 		}
 	} else {
+		if !validateTokenGroupRequest(c, token.Group) {
+			return
+		}
 		token.CrossGroupRetry = false
 		_ = token.SetAutoGroups(nil)
 	}
@@ -429,6 +454,9 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		if !validateTokenGroupRequest(c, token.Group) {
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime
