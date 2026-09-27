@@ -39,6 +39,7 @@ import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
 import { Route as AuthenticatedDocsIndexRouteImport } from './routes/_authenticated/docs/index'
 import { Route as AuthenticatedDocsPageIdRouteImport } from './routes/_authenticated/docs/$pageId'
+import { Route as AuthenticatedDrawingIndexRouteImport } from './routes/_authenticated/drawing/index'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
@@ -228,6 +229,12 @@ const AuthenticatedDocsPageIdRoute = AuthenticatedDocsPageIdRouteImport.update({
   path: '/docs/$pageId',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedDrawingIndexRoute =
+  AuthenticatedDrawingIndexRouteImport.update({
+    id: '/drawing/',
+    path: '/drawing/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
@@ -476,6 +483,7 @@ export interface FileRoutesByFullPath {
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/docs/': typeof AuthenticatedDocsIndexRoute
+  '/drawing/': typeof AuthenticatedDrawingIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/onboarding/': typeof AuthenticatedOnboardingIndexRoute
@@ -541,6 +549,7 @@ export interface FileRoutesByTo {
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/docs': typeof AuthenticatedDocsIndexRoute
+  '/drawing': typeof AuthenticatedDrawingIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/onboarding': typeof AuthenticatedOnboardingIndexRoute
@@ -610,6 +619,7 @@ export interface FileRoutesById {
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/docs/': typeof AuthenticatedDocsIndexRoute
+  '/_authenticated/drawing/': typeof AuthenticatedDrawingIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/onboarding/': typeof AuthenticatedOnboardingIndexRoute
@@ -678,6 +688,7 @@ export interface FileRouteTypes {
     | '/channels/'
     | '/dashboard/'
     | '/docs/'
+    | '/drawing/'
     | '/keys/'
     | '/models/'
     | '/onboarding/'
@@ -743,6 +754,7 @@ export interface FileRouteTypes {
     | '/channels'
     | '/dashboard'
     | '/docs'
+    | '/drawing'
     | '/keys'
     | '/models'
     | '/onboarding'
@@ -811,6 +823,7 @@ export interface FileRouteTypes {
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/docs/'
+    | '/_authenticated/drawing/'
     | '/_authenticated/keys/'
     | '/_authenticated/models/'
     | '/_authenticated/onboarding/'
@@ -1072,6 +1085,13 @@ declare module '@tanstack/react-router' {
       path: '/docs/$pageId'
       fullPath: '/docs/$pageId'
       preLoaderRoute: typeof AuthenticatedDocsPageIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/drawing/': {
+      id: '/_authenticated/drawing/'
+      path: '/drawing'
+      fullPath: '/drawing/'
+      preLoaderRoute: typeof AuthenticatedDrawingIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/errors/$error': {
@@ -1431,6 +1451,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDocsIndexRoute: typeof AuthenticatedDocsIndexRoute
+  AuthenticatedDrawingIndexRoute: typeof AuthenticatedDrawingIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedOnboardingIndexRoute: typeof AuthenticatedOnboardingIndexRoute
@@ -1462,6 +1483,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDocsIndexRoute: AuthenticatedDocsIndexRoute,
+  AuthenticatedDrawingIndexRoute: AuthenticatedDrawingIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedOnboardingIndexRoute: AuthenticatedOnboardingIndexRoute,

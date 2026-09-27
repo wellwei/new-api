@@ -27,6 +27,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   ListTodo,
+  Palette,
   PlugZap,
   Radio,
   ServerCog,
@@ -90,6 +91,11 @@ export function useSidebarData(): SidebarData {
   )
 
   const generalItems: NavItem[] = [
+    {
+      title: t('AI Drawing'),
+      url: '/drawing',
+      icon: Palette,
+    },
     {
       title: t('Overview'),
       url: '/dashboard/overview',
