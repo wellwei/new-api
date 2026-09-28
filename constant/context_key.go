@@ -75,6 +75,13 @@ const (
 	ContextKeyIsStream             ContextKey = "is_stream"
 	ContextKeyResponseStreamStatus ContextKey = "response_stream_status"
 
+	// ContextKeyRetainTaskResult marks a submission whose durable snapshot must
+	// be retained even when the host protocol would normally discard it (the
+	// synchronous OpenAI Images protocol). The design workbench sets it: the
+	// task's artifacts are persisted into the TaskArtifactStore and referenced
+	// by design assets, so nothing is ever handed to the caller exactly once.
+	ContextKeyRetainTaskResult ContextKey = "retain_task_result"
+
 	// ContextKeyAuditLogged marks that the current request has already recorded
 	// a manage/operation audit log inside the handler. When set, the admin-audit
 	// fallback in authHelper (finishAdminAudit) skips its record to avoid

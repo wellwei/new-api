@@ -151,6 +151,7 @@ func InitOptionMap() {
 	common.OptionMap["ModelRequestRateLimitGroup"] = setting.ModelRequestRateLimitGroup2JSONString()
 	common.OptionMap["UserConcurrencyLimitEnabled"] = strconv.FormatBool(setting.UserConcurrencyLimitEnabled)
 	common.OptionMap["UserConcurrencyLimitGroup"] = setting.UserConcurrencyLimitGroup2JSONString()
+	common.OptionMap["DesignWorkbenchEnabled"] = strconv.FormatBool(setting.DesignWorkbenchEnabled)
 	common.OptionMap["ModelRatio"] = ratio_setting.ModelRatio2JSONString()
 	common.OptionMap["ModelPrice"] = ratio_setting.ModelPrice2JSONString()
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
@@ -447,6 +448,8 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.ModelRequestRateLimitEnabled = boolValue
 		case "UserConcurrencyLimitEnabled":
 			setting.UserConcurrencyLimitEnabled = boolValue
+		case "DesignWorkbenchEnabled":
+			setting.DesignWorkbenchEnabled = boolValue
 		case "StopOnSensitiveEnabled":
 			setting.StopOnSensitiveEnabled = boolValue
 		case "SMTPSSLEnabled":

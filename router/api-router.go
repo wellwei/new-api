@@ -308,6 +308,26 @@ func SetApiRouter(router *gin.Engine) {
 			redemptionRoute.DELETE("/invalid", controller.DeleteInvalidRedemption)
 			redemptionRoute.DELETE("/:id", controller.DeleteRedemption)
 		}
+
+		// AI design workbench (design doc §7.2): session-authenticated browser
+		// surface. Writes carry the origin guard in place of a CSRF token, the
+		// same protection the auth routes use.
+		designRoute := apiRouter.Group("/design")
+		designRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			designRoute.GET("/capabilities", controller.GetDesignCapabilities)
+			designRoute.GET("/capabilities/:id/schema", controller.GetDesignCapabilitySchema)
+			designRoute.GET("/projects", controller.ListDesignProjects)
+			designRoute.POST("/projects", middleware.SessionCookieOriginGuard(), controller.CreateDesignProject)
+			designRoute.GET("/projects/:id", controller.GetDesignProject)
+			designRoute.PATCH("/projects/:id", middleware.SessionCookieOriginGuard(), controller.UpdateDesignProject)
+			designRoute.DELETE("/projects/:id", middleware.SessionCookieOriginGuard(), controller.DeleteDesignProject)
+			designRoute.POST("/projects/:id/plan", middleware.SessionCookieOriginGuard(), controller.PlanDesignProject)
+			designRoute.POST("/projects/:id/confirm", middleware.SessionCookieOriginGuard(), controller.ConfirmDesignProject)
+			designRoute.POST("/projects/:id/run", middleware.SessionCookieOriginGuard(), controller.RunDesignProject)
+			designRoute.POST("/projects/:id/steps/:step_id/retry", middleware.SessionCookieOriginGuard(), controller.RetryDesignStep)
+		}
+
 		apiRouter.GET("/audit", middleware.DisableCache(), middleware.AdminAuth(), middleware.RequirePermission(authz.AuditRead), controller.GetAuditLogs)
 		apiRouter.GET("/audit/self", middleware.DisableCache(), middleware.UserAuth(), controller.GetAuditLogs)
 		logRoute := apiRouter.Group("/log")

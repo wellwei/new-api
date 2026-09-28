@@ -257,11 +257,16 @@ func decodeWorkbenchCapability(object map[string]any, index int) (*WorkbenchCapa
 		}
 		cap.ReferenceLimits = make(map[string]int, len(limits))
 		for k, v := range limits {
-			n, ok := v.(float64)
-			if !ok {
+			switch n := v.(type) {
+			case float64:
+				cap.ReferenceLimits[k] = int(n)
+			case int:
+				cap.ReferenceLimits[k] = n
+			case int64:
+				cap.ReferenceLimits[k] = int(n)
+			default:
 				return nil, fmt.Errorf("workbench capability %d referenceLimits[%q] must be a number", index, k)
 			}
-			cap.ReferenceLimits[k] = int(n)
 		}
 	}
 	if raw, present := object["parameterSchema"]; present {
@@ -300,11 +305,16 @@ func intField(object map[string]any, name string) (int, error) {
 	if !present {
 		return 0, nil
 	}
-	n, ok := raw.(float64)
-	if !ok {
+	switch n := raw.(type) {
+	case float64:
+		return int(n), nil
+	case int:
+		return n, nil
+	case int64:
+		return int(n), nil
+	default:
 		return 0, fmt.Errorf("field %q must be a number", name)
 	}
-	return int(n), nil
 }
 
 func stringField(object map[string]any, name string) (string, error) {

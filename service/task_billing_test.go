@@ -56,6 +56,11 @@ func TestMain(m *testing.M) {
 		&model.UserSubscription{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
+		&model.DesignProject{},
+		&model.DesignStep{},
+		&model.DesignAsset{},
+		&model.TaskArtifactObject{},
+		&model.Ability{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}

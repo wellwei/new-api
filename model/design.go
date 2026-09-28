@@ -1,5 +1,12 @@
 package model
 
+import (
+	"errors"
+	"time"
+
+	"gorm.io/gorm"
+)
+
 // Design tables for the AI design workbench (Phase 1). These organize user
 // intent, generation steps and durable asset references around the existing
 // `tasks` rows — the actual generation/billing still runs through the task
@@ -30,6 +37,12 @@ type DesignProject struct {
 	// never stored or returned.
 	DefaultCapability string `json:"default_capability" gorm:"type:varchar(128)"`
 	TokenID           int    `json:"token_id" gorm:"index"`
+
+	// Role / Parameters hold the Phase 1 draft-level spec (single semantic
+	// step). Parameters is the live form JSON; plan() copies both into the
+	// step and freezes them under a new PlanRevision.
+	Role       string `json:"role" gorm:"type:varchar(128)"`
+	Parameters string `json:"parameters" gorm:"type:text"`
 
 	// Anchor asset + the invariants captured when it was chosen (Phase 3
 	// derivation chain). Columns exist in Phase 1 so migrations are stable.
@@ -139,3 +152,185 @@ type TaskArtifactObject struct {
 }
 
 func (TaskArtifactObject) TableName() string { return "task_artifact_objects" }
+
+// --- Queries used by the design workbench API (controller/design.go) and the
+// --- asset backfill hook (service). Ownership is always part of the WHERE so
+// --- one user can never read or mutate another user's workspace.
+
+func GetDesignProjectByID(id int64, userID int) (*DesignProject, error) {
+	if id <= 0 || userID <= 0 {
+		return nil, errors.New("invalid design project lookup")
+	}
+	var project DesignProject
+	err := DB.Where("id = ? and user_id = ?", id, userID).First(&project).Error
+	if err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+func InsertDesignProject(project *DesignProject) error {
+	now := time.Now().Unix()
+	project.CreatedAt = now
+	project.UpdatedAt = now
+	return DB.Create(project).Error
+}
+
+func SaveDesignProject(project *DesignProject) error {
+	project.UpdatedAt = time.Now().Unix()
+	return DB.Save(project).Error
+}
+
+func DeleteDesignProject(project *DesignProject) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("project_id = ?", project.ID).Delete(&DesignAsset{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ?", project.ID).Delete(&DesignStep{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(project).Error
+	})
+}
+
+func ListDesignProjects(userID int, offset, limit int) ([]DesignProject, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var projects []DesignProject
+	var total int64
+	if err := DB.Model(&DesignProject{}).Where("user_id = ?", userID).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := DB.Where("user_id = ?", userID).
+		Order("updated_at desc").Offset(offset).Limit(limit).Find(&projects).Error
+	return projects, total, err
+}
+
+func GetDesignSteps(projectID int64) ([]DesignStep, error) {
+	var steps []DesignStep
+	err := DB.Where("project_id = ?", projectID).Order("id asc").Find(&steps).Error
+	return steps, err
+}
+
+func GetDesignStepByID(projectID, stepID int64) (*DesignStep, error) {
+	var step DesignStep
+	err := DB.Where("id = ? and project_id = ?", stepID, projectID).First(&step).Error
+	if err != nil {
+		return nil, err
+	}
+	return &step, nil
+}
+
+func InsertDesignStep(step *DesignStep) error {
+	now := time.Now().Unix()
+	step.CreatedAt = now
+	step.UpdatedAt = now
+	return DB.Create(step).Error
+}
+
+func SaveDesignStep(step *DesignStep) error {
+	step.UpdatedAt = time.Now().Unix()
+	return DB.Save(step).Error
+}
+
+func GetDesignAssets(projectID int64) ([]DesignAsset, error) {
+	var assets []DesignAsset
+	err := DB.Where("project_id = ?", projectID).Order("id asc").Find(&assets).Error
+	return assets, err
+}
+
+func GetDesignAssetByID(projectID, assetID int64) (*DesignAsset, error) {
+	var asset DesignAsset
+	err := DB.Where("id = ? and project_id = ?", assetID, projectID).First(&asset).Error
+	if err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
+// DesignStepByIdempotencyKey resolves a previously submitted step for an
+// idempotent re-run. Ownership is enforced through the project's user id.
+func DesignStepByIdempotencyKey(userID int, idempotencyKey string) (*DesignStep, error) {
+	if idempotencyKey == "" {
+		return nil, nil
+	}
+	var step DesignStep
+	err := DB.Joins("join design_projects on design_projects.id = design_steps.project_id").
+		Where("design_projects.user_id = ? and design_steps.idempotency_key = ?", userID, idempotencyKey).
+		First(&step).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &step, nil
+}
+
+// --- Backfill queries: map persisted task artifacts into design_assets. ---
+
+// DesignStepsByTaskID returns every step bound to a task. Normally at most one
+// step owns a task (one semantic role → one task), but the query stays a list
+// so a malformed double bind can never silently drop assets.
+func DesignStepsByTaskID(taskID string) ([]DesignStep, error) {
+	var steps []DesignStep
+	err := DB.Where("task_id = ?", taskID).Find(&steps).Error
+	return steps, err
+}
+
+// DesignAssetExists reports whether an asset row for (step, task, artifact key)
+// was already written. The backfill runs on every read-side sync, so it must
+// stay idempotent.
+func DesignAssetExists(stepID int64, taskID, artifactKey string) (bool, error) {
+	var count int64
+	err := DB.Model(&DesignAsset{}).
+		Where("step_id = ? and task_id = ? and artifact_key = ?", stepID, taskID, artifactKey).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func InsertDesignAsset(asset *DesignAsset) error {
+	now := time.Now().Unix()
+	asset.CreatedAt = now
+	asset.UpdatedAt = now
+	return DB.Create(asset).Error
+}
+
+// ReplaceDesignSteps freezes a new plan: all previous steps are dropped and
+// the new batch is inserted under the project's current revision. Phase 1
+// plans a single step; the batch shape keeps the API Phase-3 ready.
+func ReplaceDesignSteps(project *DesignProject, steps []*DesignStep) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("project_id = ?", project.ID).Delete(&DesignStep{}).Error; err != nil {
+			return err
+		}
+		for _, step := range steps {
+			now := time.Now().Unix()
+			step.CreatedAt = now
+			step.UpdatedAt = now
+			if err := tx.Create(step).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func CountDesignAssetsForStepTask(stepID int64, taskID string) (int, error) {
+	var count int64
+	err := DB.Model(&DesignAsset{}).
+		Where("step_id = ? and task_id = ?", stepID, taskID).
+		Count(&count).Error
+	return int(count), err
+}
+
+// GetPersistedTaskArtifactObjects returns the fully written ledger rows of one
+// task, oldest first. Pending rows are excluded: their bytes are not on disk
+// yet, and design assets must only reference durable objects (§8.2).
+func GetPersistedTaskArtifactObjects(taskID string) ([]TaskArtifactObject, error) {
+	var objects []TaskArtifactObject
+	err := DB.Where("task_id = ? and pending = ?", taskID, false).
+		Order("id asc").Find(&objects).Error
+	return objects, err
+}

@@ -671,8 +671,14 @@ func executeTaskSubmissionWith(
 	}
 	if pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedEndpoint); exists && immediateTerminal {
 		if pinned, ok := pinnedValue.(pluginruntime.PinnedEndpoint); ok && pinned.Protocol == pluginruntime.ProtocolOpenAIImage {
-			task.PrivateData.ResultDiscarded = true
-			insertOmits = append(insertOmits, "data")
+			// The design workbench sets ContextKeyRetainTaskResult: its assets
+			// outlive the response and are served from the TaskArtifactStore,
+			// so the snapshot must survive even though no protocol client is
+			// attached to this submission.
+			if !common.GetContextKeyBool(c, constant.ContextKeyRetainTaskResult) {
+				task.PrivateData.ResultDiscarded = true
+				insertOmits = append(insertOmits, "data")
+			}
 		}
 	}
 	diagnostics.insertStart(task)
