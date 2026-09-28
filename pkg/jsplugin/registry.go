@@ -107,6 +107,9 @@ type Meta struct {
 	UsageExamples        []UsageExample              `json:"usageExamples,omitempty"`
 	UsageProfiles        []UsageProfile              `json:"usageProfiles,omitempty"`
 	Auth                 AuthMeta                    `json:"auth"`
+	// Workbench is the optional design-workbench capability declaration
+	// (render metadata only; the protocol hook validates authoritatively).
+	Workbench *Workbench `json:"workbench,omitempty"`
 }
 
 // Upstream kinds a plugin driver can address. Every driver speaks to its
@@ -1003,7 +1006,7 @@ func decodeMeta(value any) (Meta, error) {
 	}
 	for field := range object {
 		switch field {
-		case "requiredCapabilities", "submitResponseTypes", "sortPriority", "website", "apiVersion", "key", "name", "icon", "description", "version", "author", "baseUrl", "channelTypes", "channelType", "compatibleChannelTypes", "models", "fetchMode", "allowedHosts", "upstreams", "routes", "protocols", "usageSchema", "usageExamples", "usageProfiles", "auth", "endpoints", "submitPaths", "actions":
+		case "requiredCapabilities", "submitResponseTypes", "sortPriority", "website", "apiVersion", "key", "name", "icon", "description", "version", "author", "baseUrl", "channelTypes", "channelType", "compatibleChannelTypes", "models", "fetchMode", "allowedHosts", "upstreams", "routes", "protocols", "usageSchema", "usageExamples", "usageProfiles", "auth", "workbench", "endpoints", "submitPaths", "actions":
 		default:
 			return Meta{}, &UnknownMetaFieldError{Field: field}
 		}
@@ -1155,6 +1158,12 @@ func decodeMeta(value any) (Meta, error) {
 		return Meta{}, fmt.Errorf("plugin meta auth must be a string or object")
 	}
 	meta.Auth.Type = strings.TrimSpace(meta.Auth.Type)
+	if rawWorkbench, present := object["workbench"]; present {
+		meta.Workbench, err = decodeWorkbench(rawWorkbench)
+		if err != nil {
+			return Meta{}, err
+		}
+	}
 	if meta.Auth.Type == "vertex_oauth" {
 		meta.Auth.Type = "oauth2_jwt"
 	}
@@ -1433,6 +1442,9 @@ func normalizeV1Meta(meta *Meta) error {
 		if err := validateUsageExamples(profile.Schema, profile.Examples); err != nil {
 			return fmt.Errorf("plugin meta usageProfiles[%d]: %w", index, err)
 		}
+	}
+	if err := ValidateWorkbench(meta.Workbench); err != nil {
+		return fmt.Errorf("plugin meta workbench: %w", err)
 	}
 	return nil
 }
