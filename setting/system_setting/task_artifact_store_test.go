@@ -23,13 +23,21 @@ func TestValidateTaskArtifactStoreConfig(t *testing.T) {
 		Mode:                TaskArtifactStoreModeUpstream,
 		S3PresignTTLSeconds: DefaultTaskArtifactStorePresignTTLSeconds,
 	}))
+	require.NoError(t, ValidateTaskArtifactStoreConfig(TaskArtifactStoreConfig{
+		Mode:                     TaskArtifactStoreModeFilesystem,
+		S3PresignTTLSeconds:      DefaultTaskArtifactStorePresignTTLSeconds,
+		FilesystemPath:           "/var/lib/new-api/task-artifacts",
+		FilesystemRetentionDays:  DefaultTaskArtifactRetentionDays,
+		FilesystemMaxObjectBytes: DefaultTaskArtifactMaxObjectBytes,
+		FilesystemMaxUserBytes:   DefaultTaskArtifactMaxUserBytes,
+	}))
 
 	tests := []struct {
 		name   string
 		mutate func(*TaskArtifactStoreConfig)
 		match  string
 	}{
-		{name: "mode", mutate: func(config *TaskArtifactStoreConfig) { config.Mode = "filesystem" }, match: "unsupported mode"},
+		{name: "mode", mutate: func(config *TaskArtifactStoreConfig) { config.Mode = "memory" }, match: "unsupported mode"},
 		{name: "endpoint scheme", mutate: func(config *TaskArtifactStoreConfig) { config.S3Endpoint = "ftp://objects.example.com" }, match: "http or https"},
 		{name: "endpoint credentials", mutate: func(config *TaskArtifactStoreConfig) { config.S3Endpoint = "https://user:pass@objects.example.com" }, match: "without userinfo"},
 		{name: "endpoint query", mutate: func(config *TaskArtifactStoreConfig) { config.S3Endpoint = "https://objects.example.com?token=secret" }, match: "query or fragment"},
@@ -40,6 +48,23 @@ func TestValidateTaskArtifactStoreConfig(t *testing.T) {
 		{name: "secret key", mutate: func(config *TaskArtifactStoreConfig) { config.S3SecretKey = "secret\nkey" }, match: "secret key syntax"},
 		{name: "prefix root", mutate: func(config *TaskArtifactStoreConfig) { config.S3Prefix = "/tasks" }, match: "prefix syntax"},
 		{name: "prefix traversal", mutate: func(config *TaskArtifactStoreConfig) { config.S3Prefix = "tasks/../private" }, match: "dot segments"},
+		{name: "filesystem missing path", mutate: func(config *TaskArtifactStoreConfig) {
+			config.Mode = TaskArtifactStoreModeFilesystem
+			config.FilesystemPath = ""
+		}, match: "requires TASK_ARTIFACT_STORE_PATH"},
+		{name: "filesystem bad retention", mutate: func(config *TaskArtifactStoreConfig) {
+			config.Mode = TaskArtifactStoreModeFilesystem
+			config.FilesystemPath = "/var/lib/new-api/task-artifacts"
+			config.FilesystemRetentionDays = 0
+			config.FilesystemMaxObjectBytes = DefaultTaskArtifactMaxObjectBytes
+			config.FilesystemMaxUserBytes = DefaultTaskArtifactMaxUserBytes
+		}, match: "retention days"},
+		{name: "filesystem bad object cap", mutate: func(config *TaskArtifactStoreConfig) {
+			config.Mode = TaskArtifactStoreModeFilesystem
+			config.FilesystemPath = "/var/lib/new-api/task-artifacts"
+			config.FilesystemRetentionDays = DefaultTaskArtifactRetentionDays
+			config.FilesystemMaxObjectBytes = 0
+		}, match: "byte limits"},
 		{name: "TTL zero", mutate: func(config *TaskArtifactStoreConfig) { config.S3PresignTTLSeconds = 0 }, match: "presign TTL"},
 		{name: "TTL too long", mutate: func(config *TaskArtifactStoreConfig) {
 			config.S3PresignTTLSeconds = MaxTaskArtifactStorePresignTTLSeconds + 1
@@ -55,7 +80,8 @@ func TestValidateTaskArtifactStoreConfig(t *testing.T) {
 }
 
 func TestLoadTaskArtifactStoreConfigFallsBackToUpstream(t *testing.T) {
-	t.Setenv(TaskArtifactStoreModeEnv, "filesystem")
+	// A not-yet-implemented mode falls back to upstream at load time.
+	t.Setenv(TaskArtifactStoreModeEnv, "memory")
 	t.Setenv(TaskArtifactStoreS3PresignTTLEnv, "900")
 	config := LoadTaskArtifactStoreConfig()
 	assert.Equal(t, TaskArtifactStoreModeUpstream, config.Mode)

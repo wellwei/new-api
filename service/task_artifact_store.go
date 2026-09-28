@@ -53,11 +53,17 @@ func (disabledArtifactStore) Serve(*gin.Context, *model.Task, *StoredArtifactRef
 var taskArtifactStore TaskArtifactStore = &disabledArtifactStore{}
 
 func init() {
-	_ = system_setting.LoadTaskArtifactStoreConfig()
+	cfg := system_setting.LoadTaskArtifactStoreConfig()
+	if cfg.Mode == system_setting.TaskArtifactStoreModeFilesystem {
+		taskArtifactStore = NewFilesystemArtifactStore(cfg)
+	}
+	// upstream and (reserved) s3 keep the disabled store, which falls back to
+	// live upstream proxying on Serve.
 }
 
-// GetTaskArtifactStore returns the process-wide artifact storage backend. This
-// release always returns the disabled implementation.
+// GetTaskArtifactStore returns the process-wide artifact storage backend. It
+// is the filesystem backend when TASK_ARTIFACT_STORE_MODE=filesystem, else the
+// disabled store (live upstream proxying).
 func GetTaskArtifactStore() TaskArtifactStore {
 	return taskArtifactStore
 }

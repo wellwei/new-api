@@ -36,3 +36,17 @@ func GetEnvOrDefaultBool(env string, defaultValue bool) bool {
 	}
 	return b
 }
+
+// GetEnvOrDefaultInt64 reads an int64 environment variable, falling back to
+// defaultValue when unset or unparsable.
+func GetEnvOrDefaultInt64(env string, defaultValue int64) int64 {
+	if env == "" || os.Getenv(env) == "" {
+		return defaultValue
+	}
+	num, err := strconv.ParseInt(os.Getenv(env), 10, 64)
+	if err != nil {
+		SysError(fmt.Sprintf("failed to parse %s: %s, using default value: %d", env, err.Error(), defaultValue))
+		return defaultValue
+	}
+	return num
+}

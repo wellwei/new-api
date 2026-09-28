@@ -629,6 +629,11 @@ func finalizeTerminalTask(ctx context.Context, adaptor TaskPollingAdaptor, task 
 	if task.Status == model.TaskStatusFailure && !billingSettled && task.Quota != 0 {
 		RefundTaskQuota(ctx, task, task.FailReason)
 	}
+	// Persist generated artifacts for durable storage (design doc §8.2). Runs
+	// once per succeeded task at the terminal-state single-winner point.
+	if task.Status == model.TaskStatusSuccess {
+		maybePersistArtifacts(ctx, task)
+	}
 }
 
 func redactVideoResponseBody(body []byte) []byte {

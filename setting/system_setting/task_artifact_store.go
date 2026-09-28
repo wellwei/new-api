@@ -13,11 +13,17 @@ import (
 )
 
 const (
-	TaskArtifactStoreModeUpstream = "upstream"
-	TaskArtifactStoreModeS3       = "s3"
+	TaskArtifactStoreModeUpstream   = "upstream"
+	TaskArtifactStoreModeS3         = "s3"
+	TaskArtifactStoreModeFilesystem = "filesystem"
 
 	DefaultTaskArtifactStorePresignTTLSeconds = 900
 	MaxTaskArtifactStorePresignTTLSeconds     = 7 * 24 * 60 * 60
+
+	// Filesystem backend defaults. Retention matches the design doc (30d).
+	DefaultTaskArtifactRetentionDays  = 30
+	DefaultTaskArtifactMaxObjectBytes = 64 << 20 // 64 MiB per object
+	DefaultTaskArtifactMaxUserBytes   = 2 << 30  // 2 GiB per user
 )
 
 const (
@@ -29,6 +35,11 @@ const (
 	TaskArtifactStoreS3SecretKeyEnv  = "TASK_ARTIFACT_STORE_S3_SECRET_KEY"
 	TaskArtifactStoreS3PrefixEnv     = "TASK_ARTIFACT_STORE_S3_PREFIX"
 	TaskArtifactStoreS3PresignTTLEnv = "TASK_ARTIFACT_STORE_S3_PRESIGN_TTL"
+
+	TaskArtifactStoreFilesystemPathEnv      = "TASK_ARTIFACT_STORE_PATH"
+	TaskArtifactStoreFilesystemRetentionEnv = "TASK_ARTIFACT_STORE_RETENTION_DAYS"
+	TaskArtifactStoreFilesystemMaxObjectEnv = "TASK_ARTIFACT_STORE_MAX_OBJECT_BYTES"
+	TaskArtifactStoreFilesystemMaxUserEnv   = "TASK_ARTIFACT_STORE_MAX_USER_BYTES"
 )
 
 var (
@@ -47,6 +58,11 @@ type TaskArtifactStoreConfig struct {
 	S3SecretKey         string
 	S3Prefix            string
 	S3PresignTTLSeconds int
+
+	FilesystemPath           string
+	FilesystemRetentionDays  int
+	FilesystemMaxObjectBytes int64
+	FilesystemMaxUserBytes   int64
 }
 
 // LoadTaskArtifactStoreConfig reads and validates startup-only configuration.
@@ -61,6 +77,13 @@ func LoadTaskArtifactStoreConfig() TaskArtifactStoreConfig {
 		S3SecretKey:         common.GetEnvOrDefaultString(TaskArtifactStoreS3SecretKeyEnv, ""),
 		S3Prefix:            common.GetEnvOrDefaultString(TaskArtifactStoreS3PrefixEnv, ""),
 		S3PresignTTLSeconds: common.GetEnvOrDefault(TaskArtifactStoreS3PresignTTLEnv, DefaultTaskArtifactStorePresignTTLSeconds),
+
+		FilesystemPath:          common.GetEnvOrDefaultString(TaskArtifactStoreFilesystemPathEnv, ""),
+		FilesystemRetentionDays: common.GetEnvOrDefault(TaskArtifactStoreFilesystemRetentionEnv, DefaultTaskArtifactRetentionDays),
+		FilesystemMaxObjectBytes: common.GetEnvOrDefaultInt64(
+			TaskArtifactStoreFilesystemMaxObjectEnv, DefaultTaskArtifactMaxObjectBytes),
+		FilesystemMaxUserBytes: common.GetEnvOrDefaultInt64(
+			TaskArtifactStoreFilesystemMaxUserEnv, DefaultTaskArtifactMaxUserBytes),
 	}
 	if err := ValidateTaskArtifactStoreConfig(config); err != nil {
 		common.SysError("invalid task artifact store configuration: " + err.Error() + "; using upstream mode")
@@ -77,8 +100,24 @@ func LoadTaskArtifactStoreConfig() TaskArtifactStoreConfig {
 // ValidateTaskArtifactStoreConfig performs syntax checks only. It never
 // resolves hosts, contacts an endpoint, or verifies credentials.
 func ValidateTaskArtifactStoreConfig(config TaskArtifactStoreConfig) error {
-	if config.Mode != TaskArtifactStoreModeUpstream && config.Mode != TaskArtifactStoreModeS3 {
+	if config.Mode != TaskArtifactStoreModeUpstream && config.Mode != TaskArtifactStoreModeS3 &&
+		config.Mode != TaskArtifactStoreModeFilesystem {
 		return fmt.Errorf("unsupported mode %q", config.Mode)
+	}
+	if config.Mode == TaskArtifactStoreModeFilesystem {
+		if config.FilesystemPath == "" {
+			return errors.New("filesystem artifact store requires " + TaskArtifactStoreFilesystemPathEnv)
+		}
+		if config.FilesystemPath != strings.TrimSpace(config.FilesystemPath) || len(config.FilesystemPath) > 512 ||
+			strings.Contains(config.FilesystemPath, "\\") {
+			return errors.New("filesystem artifact path is invalid")
+		}
+		if config.FilesystemRetentionDays <= 0 {
+			return errors.New("filesystem artifact retention days must be positive")
+		}
+		if config.FilesystemMaxObjectBytes <= 0 || config.FilesystemMaxUserBytes <= 0 {
+			return errors.New("filesystem artifact byte limits must be positive")
+		}
 	}
 	if config.S3PresignTTLSeconds <= 0 || config.S3PresignTTLSeconds > MaxTaskArtifactStorePresignTTLSeconds {
 		return fmt.Errorf("S3 presign TTL must be between 1 and %d seconds", MaxTaskArtifactStorePresignTTLSeconds)
