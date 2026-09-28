@@ -16,12 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 
-// The AI drawing page moved to the design workbench (Phase 1 migration,
-// design doc §9): the old route is a permanent redirect.
-export const Route = createFileRoute('/_authenticated/drawing/')({
-  beforeLoad: () => {
-    throw redirect({ to: '/design', replace: true, statusCode: 308 })
-  },
+import { Design } from '@/features/design'
+
+export const Route = createFileRoute('/_authenticated/design/')({
+  component: Design,
 })

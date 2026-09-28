@@ -42,7 +42,10 @@ import { useTranslation } from 'react-i18next'
 
 import type { NavGroup, NavItem, SidebarData } from '@/components/layout/types'
 import { getDocsNavItems } from '@/features/docs/wiki'
-import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
+import {
+  parseHeaderNavBoolean,
+  parseHeaderNavModulesFromStatus,
+} from '@/lib/nav-modules'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -91,11 +94,20 @@ export function useSidebarData(): SidebarData {
   )
 
   const generalItems: NavItem[] = [
-    {
-      title: t('AI Drawing'),
-      url: '/drawing',
-      icon: Palette,
-    },
+    // The design workbench replaced the drawing page (Phase 1 migration);
+    // the operator's global switch decides whether the surface exists at all.
+    ...(parseHeaderNavBoolean(
+      status?.design_workbench_enabled,
+      false
+    )
+      ? [
+          {
+            title: t('AI Design'),
+            url: '/design',
+            icon: Palette,
+          },
+        ]
+      : []),
     {
       title: t('Overview'),
       url: '/dashboard/overview',

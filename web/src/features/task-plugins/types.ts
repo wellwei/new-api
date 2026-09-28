@@ -41,6 +41,29 @@ export type TaskPluginRoute = {
   models?: string[]
 }
 
+/**
+ * One workbench capability declared by `meta.workbench` (backend
+ * `jsplugin.WorkbenchCapability`).camelCase matches the backend contract;
+ * `parameterSchema` keeps the constrained JSON Schema subset plus pass-through
+ * annotations (`x-*`, `constraints`) that the form renderer interprets.
+ */
+export type WorkbenchCapability = {
+  id: string
+  model: string
+  mediaType: 'image' | 'video'
+  operations?: string[]
+  deferSchema?: boolean
+  referenceLimits?: Record<string, number>
+  parameterSchema?: Record<string, unknown>
+  presets?: Record<string, unknown>[]
+  delivery?: Record<string, unknown>
+}
+
+export type WorkbenchDeclaration = {
+  schemaVersion: number
+  capabilities?: WorkbenchCapability[]
+}
+
 export type TaskPluginMeta = {
   sortPriority?: number
   website?: string
@@ -66,6 +89,7 @@ export type TaskPluginMeta = {
     schema: BillingUsageSchema
     examples?: BillingUsageExample[]
   }[]
+  workbench?: WorkbenchDeclaration
 }
 
 export type TaskPluginRecord = {

@@ -504,8 +504,11 @@ func RunDesignProject(c *gin.Context) {
 	if submitErr != nil {
 		// The run partially proceeded; return the view with the failure in
 		// the message so the UI renders both.
-		common.ApiSuccess(c, view)
-		c.Header("X-Design-Submit-Error", common.MaskSensitiveInfo(submitErr.Error()))
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": common.MaskSensitiveInfo(submitErr.Error()),
+			"data":    view,
+		})
 		return
 	}
 	common.ApiSuccess(c, view)

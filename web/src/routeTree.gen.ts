@@ -37,6 +37,7 @@ import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
+import { Route as AuthenticatedDesignIndexRouteImport } from './routes/_authenticated/design/index'
 import { Route as AuthenticatedDocsIndexRouteImport } from './routes/_authenticated/docs/index'
 import { Route as AuthenticatedDocsPageIdRouteImport } from './routes/_authenticated/docs/$pageId'
 import { Route as AuthenticatedDrawingIndexRouteImport } from './routes/_authenticated/drawing/index'
@@ -217,6 +218,12 @@ const AuthenticatedDashboardSectionRoute =
   AuthenticatedDashboardSectionRouteImport.update({
     id: '/dashboard/$section',
     path: '/dashboard/$section',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDesignIndexRoute =
+  AuthenticatedDesignIndexRouteImport.update({
+    id: '/design/',
+    path: '/design/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedDocsIndexRoute = AuthenticatedDocsIndexRouteImport.update({
@@ -482,6 +489,7 @@ export interface FileRoutesByFullPath {
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/design/': typeof AuthenticatedDesignIndexRoute
   '/docs/': typeof AuthenticatedDocsIndexRoute
   '/drawing/': typeof AuthenticatedDrawingIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
@@ -548,6 +556,7 @@ export interface FileRoutesByTo {
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
+  '/design': typeof AuthenticatedDesignIndexRoute
   '/docs': typeof AuthenticatedDocsIndexRoute
   '/drawing': typeof AuthenticatedDrawingIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
@@ -618,6 +627,7 @@ export interface FileRoutesById {
   '/_authenticated/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/_authenticated/design/': typeof AuthenticatedDesignIndexRoute
   '/_authenticated/docs/': typeof AuthenticatedDocsIndexRoute
   '/_authenticated/drawing/': typeof AuthenticatedDrawingIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
@@ -687,6 +697,7 @@ export interface FileRouteTypes {
     | '/usage-logs/audit'
     | '/channels/'
     | '/dashboard/'
+    | '/design/'
     | '/docs/'
     | '/drawing/'
     | '/keys/'
@@ -753,6 +764,7 @@ export interface FileRouteTypes {
     | '/usage-logs/audit'
     | '/channels'
     | '/dashboard'
+    | '/design'
     | '/docs'
     | '/drawing'
     | '/keys'
@@ -822,6 +834,7 @@ export interface FileRouteTypes {
     | '/_authenticated/usage-logs/audit'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
+    | '/_authenticated/design/'
     | '/_authenticated/docs/'
     | '/_authenticated/drawing/'
     | '/_authenticated/keys/'
@@ -1071,6 +1084,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/$section'
       fullPath: '/dashboard/$section'
       preLoaderRoute: typeof AuthenticatedDashboardSectionRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/design/': {
+      id: '/_authenticated/design/'
+      path: '/design'
+      fullPath: '/design/'
+      preLoaderRoute: typeof AuthenticatedDesignIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/docs/': {
@@ -1450,6 +1470,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsageLogsAuditRoute: typeof AuthenticatedUsageLogsAuditRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
+  AuthenticatedDesignIndexRoute: typeof AuthenticatedDesignIndexRoute
   AuthenticatedDocsIndexRoute: typeof AuthenticatedDocsIndexRoute
   AuthenticatedDrawingIndexRoute: typeof AuthenticatedDrawingIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
@@ -1482,6 +1503,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsageLogsAuditRoute: AuthenticatedUsageLogsAuditRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
+  AuthenticatedDesignIndexRoute: AuthenticatedDesignIndexRoute,
   AuthenticatedDocsIndexRoute: AuthenticatedDocsIndexRoute,
   AuthenticatedDrawingIndexRoute: AuthenticatedDrawingIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
