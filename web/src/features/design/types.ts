@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 // Types for the AI design workbench (Phase 1). These mirror the backend
 // contract exposed by /api/design/* (controller/design.go and
 // service/design_capability.go).
@@ -76,8 +75,15 @@ export type DesignParameterProperty = {
   maximum?: number
   minLength?: number
   maxLength?: number
+  /** Ceiling for `type: 'array'` fields, e.g. reference images. */
+  maxItems?: number
   items?: DesignParameterProperty
   'x-hidden'?: boolean
+  /**
+   * Requirement the plugin states in its own voice, e.g. "保持主体清晰、构图完整".
+   * Advisory rather than enforced, so the UI renders it as guidance.
+   */
+  'x-append'?: string
   constraints?: string[]
   [key: string]: unknown
 }

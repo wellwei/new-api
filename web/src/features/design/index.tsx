@@ -17,52 +17,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Download,
-  FilePlus2,
-  Loader2,
-  Play,
-  RefreshCw,
-  Sparkles,
-  Trash2,
-  TriangleAlert,
-} from 'lucide-react'
+import { ImageIcon, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { CopyButton } from '@/components/copy-button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { EmptyState } from '@/components/empty-state'
+import { LoadingState } from '@/components/loading-state'
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { getApiKeys } from '@/features/keys/api'
-import {
-  defaultValuesFromSchema,
-  SchemaForm,
-} from '@/features/design/schema-form'
+
+import { formatQuota } from '@/lib/format'
+import { requireServerSuccess } from '@/lib/server-error-message'
+
 import {
   confirmDesignProject,
   createDesignProject,
@@ -75,40 +45,26 @@ import {
   retryDesignStep,
   runDesignProject,
   updateDesignProject,
-} from '@/features/design/api'
+} from './api'
+import { AssetBoard, RunStatus } from './components/asset-board'
+import { BriefForm, ConfirmPanel } from './components/brief-form'
+import { EntryEmptyState, EntryPicker } from './components/entry-picker'
+import { StepBar } from './components/step-bar'
+import { describeReferenceUsage, summarizeStepSpec } from './lib/spec-summary'
+import { defaultValuesFromSchema } from './schema-form'
+import {
+  missingRequiredFields,
+  PROJECT_STATUS_HINT,
+  PROJECT_STATUS_TEXT,
+  type StepKey,
+} from './terminology'
 import type {
   DesignCapability,
   DesignCapabilityPreset,
   DesignParameterSchema,
   DesignProjectView,
   DesignStepWithAssets,
-} from '@/features/design/types'
-import { formatQuota } from '@/lib/format'
-import { requireServerSuccess } from '@/lib/server-error-message'
-import { cn } from '@/lib/utils'
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: '草稿',
-  awaiting_confirmation: '待确认',
-  ready: '已确认',
-  generating: '生成中',
-  review: '待验收',
-  completed: '已完成',
-  partial: '部分完成',
-}
-
-const STEP_STATUS_LABELS: Record<string, string> = {
-  pending: '待提交',
-  submitted: '已提交',
-  succeeded: '已完成',
-  failed: '已失败',
-}
-
-const FAILURE_LABELS: Record<string, string> = {
-  submission_rejected: '提交被拒（未产生任务，可重试）',
-  parameter_rejected: '参数被上游拒绝（修正后重试）',
-  upstream_failed: '上游任务失败',
-}
+} from './types'
 
 export type DraftState = {
   name: string
@@ -171,88 +127,19 @@ export function applyCapabilityPreset(
   }
 }
 
-const REFERENCE_PARAM_KEYS = [
-  'image',
-  'first_frame_image',
-  'last_frame_image',
-  'reference_images',
-] as const
+/**
+ * Re-exported from lib/spec-summary so existing importers (and the test suite)
+ * keep a stable path. The implementation moved out of this file because it grew
+ * a reference-image branch and stopped being a two-line JSON.parse.
+ */
+export { summarizeStepSpec }
 
-const SPEC_DISPLAY_KEYS = [
-  'aspect_ratio',
-  'resolution',
-  'size',
-  'duration',
-  'count',
-  'generate_audio',
-] as const
-
-export function summarizeStepSpec(parametersRaw: string): {
-  summary: string
-  inputMode: string
-  prompt: string
-} {
-  let parsed: Record<string, unknown> = {}
-  try {
-    parsed = parametersRaw ? JSON.parse(parametersRaw) : {}
-  } catch {
-    parsed = {}
-  }
-  const hasReference = REFERENCE_PARAM_KEYS.some((key) => {
-    const val = parsed[key]
-    if (Array.isArray(val)) return val.length > 0
-    if (typeof val === 'string') return val.trim() !== ''
-    return val != null
-  })
-  const inputMode = hasReference ? '参考图驱动' : '纯文字生成'
-  const parts: string[] = []
-  for (const key of SPEC_DISPLAY_KEYS) {
-    const val = parsed[key]
-    if (val === undefined || val === null || val === '') continue
-    if (typeof val === 'boolean') {
-      parts.push(`${key}=${val ? '开启' : '关闭'}`)
-    } else {
-      parts.push(`${key}=${String(val)}`)
-    }
-  }
-  const prompt = typeof parsed['prompt'] === 'string' ? parsed['prompt'] : ''
-  return {
-    summary: parts.join(' · '),
-    inputMode,
-    prompt,
-  }
-}
-
-function isAssetImage(asset: { mime_type: string }): boolean {
-  return asset.mime_type.startsWith('image/') || asset.mime_type === ''
-}
-
-function AssetItem({
-  url,
-  mimeType,
-  index,
-}: {
-  url: string
-  mimeType: string
-  index: number
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-md border">
-      {isAssetImage({ mime_type: mimeType }) ? (
-        <img src={url} alt={`candidate-${index}`} className="w-full" loading="lazy" />
-      ) : (
-        <video src={url} controls className="w-full" preload="metadata" />
-      )}
-      <a
-        href={url}
-        download
-        className="bg-background/80 absolute right-2 top-2 rounded-md p-1.5 opacity-0 transition group-hover:opacity-100"
-        title="下载"
-      >
-        <Download className="h-4 w-4" />
-      </a>
-    </div>
-  )
+/** Derives the furthest step the user has legitimately reached. */
+function stepForStatus(status: string | undefined): StepKey {
+  if (!status) return 'entry'
+  if (status === 'draft') return 'brief'
+  if (status === 'awaiting_confirmation' || status === 'ready') return 'preview'
+  return 'result'
 }
 
 export function Design() {
@@ -261,11 +148,10 @@ export function Design() {
 
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [draft, setDraft] = useState<DraftState | null>(null)
-  const [mobileTab, setMobileTab] = useState<'params' | 'assets' | 'workflow'>(
-    'params'
-  )
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [step, setStep] = useState<StepKey>('entry')
+  const [mobileTab, setMobileTab] = useState<'work' | 'result'>('work')
   const [errorText, setErrorText] = useState('')
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const capabilitiesQuery = useQuery({
     queryKey: ['design', 'capabilities'],
@@ -295,7 +181,7 @@ export function Design() {
       if (!data) return false
       const running =
         data.status === 'generating' ||
-        (data.steps ?? []).some((step) => step.status === 'submitted')
+        (data.steps ?? []).some((stepItem) => stepItem.status === 'submitted')
       return running ? 4000 : false
     },
   })
@@ -315,47 +201,29 @@ export function Design() {
     if (selectedId === null && projects.length > 0) {
       setSelectedId(projects[0].id)
     }
-  }, [selectedId, projects])
+    // projects is re-derived each render; the id list is the real signal here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, projectsQuery.data])
 
   useEffect(() => {
     if (project) {
       setDraft(draftFromProject(project))
+      setStep(stepForStatus(project.status))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id])
+  }, [project?.id, project?.status])
 
-  const filteredCapabilities = useMemo(
-    () => filterCapabilitiesByKind(capabilities, draft?.kind ?? 'image'),
-    [capabilities, draft?.kind]
-  )
-
-  const capability = useMemo(
-    () =>
-      capabilities.find((item) => item.id === draft?.capability_id) ?? null,
-    [capabilities, draft?.capability_id]
-  )
-
-  const deferredSchemaQuery = useQuery({
-    queryKey: ['design', 'capability-schema', capability?.id],
-    queryFn: () => getDesignCapabilitySchema(capability!.id),
-    enabled: Boolean(
-      capability?.id && capability.defer_schema && !capability.parameter_schema
-    ),
-    staleTime: 5 * 60 * 1000,
-  })
+  // The results live in their own tab on mobile, and the "Design" tab only
+  // renders steps 1-3. Without this, reaching step 4 by any path other than the
+  // confirm button — clicking the step bar, reopening a finished task, or a
+  // retry flipping status to `generating` — leaves the user staring at an empty
+  // tab. One effect, so no transition can skip it.
+  useEffect(() => {
+    setMobileTab(step === 'result' ? 'result' : 'work')
+  }, [step])
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['design'] })
-  }
-
-  const withError = async (action: () => Promise<unknown>) => {
-    setErrorText('')
-    try {
-      await action()
-      invalidate()
-    } catch (error) {
-      setErrorText(error instanceof Error ? error.message : String(error))
-    }
   }
 
   const createMutation = useMutation({
@@ -363,29 +231,17 @@ export function Design() {
     onSuccess: (created) => {
       setSelectedId(created.id)
       setDraft(draftFromProject({ ...created, steps: [] }))
+      setStep('entry')
       invalidate()
     },
     onError: (error: Error) => setErrorText(error.message),
   })
 
-  const saveDraft = () => {
-    if (!selectedId || !draft) return
-    void withError(() =>
-      updateDesignProject(selectedId, {
-        name: draft.name,
-        kind: draft.kind,
-        capability_id: draft.capability_id,
-        token_id: draft.token_id,
-        role: draft.role,
-        brief: draft.brief,
-        parameters: draft.parameters,
-      })
-    )
-  }
-
   const planMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedId || !draft) throw new Error('请先保存草稿')
+      if (!selectedId || !draft) throw new Error(t('Please finish step 1 first'))
+      // Saving and planning are one user action now: the old page required a
+      // separate "save draft" click that gave no feedback.
       await updateDesignProject(selectedId, {
         name: draft.name,
         kind: draft.kind,
@@ -399,6 +255,7 @@ export function Design() {
     },
     onSuccess: (planned) => {
       setDraft(draftFromProject(planned))
+      setStep('preview')
       invalidate()
     },
     onError: (error: Error) => setErrorText(error.message),
@@ -406,11 +263,16 @@ export function Design() {
 
   const confirmMutation = useMutation({
     mutationFn: () => {
-      if (!selectedId) throw new Error('未选择项目')
+      if (!selectedId) throw new Error(t('No task selected'))
       return confirmDesignProject(selectedId)
     },
-    onSuccess: () => {
-      setConfirmOpen(false)
+    onSuccess: (confirmed) => {
+      // Confirmation alone must not spend money. The design doc (§4.3) treats
+      // "review the cost sheet" and "start generating" as two deliberate acts,
+      // and keeping them apart also means a failed run cannot be retried by
+      // re-confirming an already-confirmed project (§4.6).
+      setDraft(draftFromProject({ ...confirmed, steps: [] }))
+      setErrorText('')
       invalidate()
     },
     onError: (error: Error) => setErrorText(error.message),
@@ -418,11 +280,11 @@ export function Design() {
 
   const runMutation = useMutation({
     mutationFn: () => {
-      if (!selectedId) throw new Error('未选择项目')
+      if (!selectedId) throw new Error(t('No task selected'))
       return runDesignProject(selectedId)
     },
     onSuccess: (result) => {
-      setMobileTab('workflow')
+      setStep('result')
       if (result.submitError) setErrorText(result.submitError)
       invalidate()
     },
@@ -431,7 +293,7 @@ export function Design() {
 
   const retryMutation = useMutation({
     mutationFn: (stepId: number) => {
-      if (!selectedId) throw new Error('未选择项目')
+      if (!selectedId) throw new Error(t('No task selected'))
       return retryDesignStep(selectedId, stepId)
     },
     onSuccess: () => invalidate(),
@@ -440,12 +302,14 @@ export function Design() {
 
   const deleteMutation = useMutation({
     mutationFn: () => {
-      if (!selectedId) throw new Error('未选择项目')
+      if (!selectedId) throw new Error(t('No task selected'))
       return deleteDesignProject(selectedId)
     },
     onSuccess: () => {
       setSelectedId(null)
       setDraft(null)
+      setStep('entry')
+      setDeleteOpen(false)
       invalidate()
     },
     onError: (error: Error) => setErrorText(error.message),
@@ -459,534 +323,398 @@ export function Design() {
     deleteMutation.isPending ||
     createMutation.isPending
 
-  const editable =
-    project?.status === 'draft' ||
-    project?.status === 'awaiting_confirmation' ||
-    project?.status === 'ready'
+  const capability = useMemo(
+    () => capabilities.find((item) => item.id === draft?.capability_id) ?? null,
+    // capabilitiesQuery.data is the stable source; the derived array is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [capabilitiesQuery.data, draft?.capability_id]
+  )
+
+  const deferredSchemaId =
+    capability && capability.defer_schema && !capability.parameter_schema
+      ? capability.id
+      : null
+
+  const deferredSchemaQuery = useQuery({
+    queryKey: ['design', 'capability-schema', deferredSchemaId],
+    queryFn: () => getDesignCapabilitySchema(deferredSchemaId as string),
+    enabled: deferredSchemaId !== null,
+    staleTime: 5 * 60 * 1000,
+  })
 
   const paramSchema: DesignParameterSchema | null =
     capability?.parameter_schema ?? deferredSchemaQuery.data ?? null
-  const hasSchemaPrompt = Boolean(paramSchema?.properties?.['prompt'])
   const promptText = (draft?.parameters['prompt'] as string | undefined) ?? ''
-  const presets = capability?.presets ?? []
+  const steps: DesignStepWithAssets[] = Array.isArray(project?.steps)
+    ? project.steps
+    : []
+  const primarySpec = summarizeStepSpec(
+    steps[0]?.parameters ?? project?.parameters ?? ''
+  )
 
-  const renderParamsPanel = () => (
-    <div className="space-y-4">
-      {capabilities.length === 0 ? (
-        <Card>
-          <CardContent className="text-muted-foreground py-8 text-center text-sm">
-            {capabilitiesQuery.isLoading
-              ? t('Loading…')
-              : t('No design capability is available: the workbench switch must be on, and a workbench plugin capability must be priced with an available channel.')}
-          </CardContent>
-        </Card>
-      ) : null}
+  const missing = draft
+    ? missingRequiredFields(
+        promptText.trim() !== '',
+        draft.capability_id,
+        draft.token_id
+      )
+    : []
+  const canPlan = draft !== null && missing.length === 0 && !busy
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('Project')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Select
-              value={selectedId == null ? '' : String(selectedId)}
-              onValueChange={(value) => {
-                setSelectedId(value === '' ? null : Number(value))
-                setDraft(null)
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={t('Select project')} />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((item) => (
-                  <SelectItem key={item.id} value={String(item.id)}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                const defaultCap =
-                  capabilities.find((item) => item.media_type === 'image') ??
-                  capabilities[0]
-                createMutation.mutate({
-                  name: `设计项目 ${new Date().toLocaleString()}`,
-                  kind: defaultCap?.media_type ?? 'image',
-                  capability_id: defaultCap?.id ?? '',
-                  token_id: keys[0]?.id ?? 0,
-                })
-              }}
-            >
-              <FilePlus2 className="mr-1 h-4 w-4" />
-              {t('New')}
-            </Button>
-          </div>
+  const reached: StepKey = (() => {
+    if (!project) return 'entry'
+    if (project.status === 'generating' || steps.length > 0) return 'result'
+    if (project.status === 'awaiting_confirmation' || project.status === 'ready') {
+      return 'preview'
+    }
+    if (promptText.trim() !== '') return 'preview'
+    return 'entry'
+  })()
 
-          {project && draft ? (
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label>{t('Name')}</Label>
-                <Input
-                  value={draft.name}
-                  disabled={!editable}
-                  onChange={(event) =>
-                    setDraft({ ...draft, name: event.target.value })
-                  }
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-2">
-                  <Label>{t('Delivery form')}</Label>
-                  <Select
-                    value={draft.kind}
-                    disabled={!editable}
-                    onValueChange={(value) => {
-                      const nextKind = value as 'image' | 'video'
-                      const matching = filterCapabilitiesByKind(
-                        capabilities,
-                        nextKind
-                      )
-                      const currentMatches = matching.some(
-                        (item) => item.id === draft.capability_id
-                      )
-                      setDraft({
-                        ...draft,
-                        kind: nextKind,
-                        capability_id: currentMatches
-                          ? draft.capability_id
-                          : (matching[0]?.id ?? ''),
-                        parameters: currentMatches ? draft.parameters : {},
-                      })
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="image">{t('Image')}</SelectItem>
-                      <SelectItem value="video">{t('Video')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>{t('Semantic role')}</Label>
-                  <Input
-                    value={draft.role}
-                    disabled={!editable}
-                    onChange={(event) =>
-                      setDraft({ ...draft, role: event.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>{t('Capability / Model')}</Label>
-                <Select
-                  value={draft.capability_id}
-                  disabled={!editable}
-                  onValueChange={(value) => {
-                    const selectedCap = capabilities.find(
-                      (item) => item.id === value
-                    )
-                    setDraft({
-                      ...draft,
-                      kind: selectedCap?.media_type ?? draft.kind,
-                      capability_id: value ?? '',
-                      parameters: {},
-                    })
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={t('Select capability')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredCapabilities.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.plugin_name} · {item.model}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>{t('Billing token')}</Label>
-                <Select
-                  value={draft.token_id === 0 ? '' : String(draft.token_id)}
-                  disabled={!editable}
-                  onValueChange={(value) =>
-                    setDraft({ ...draft, token_id: Number(value) })
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={t('Select token')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {keys.map((key: { id: number; name: string }) => (
-                      <SelectItem key={key.id} value={String(key.id)}>
-                        {key.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-muted-foreground text-xs">
-                  {t('The server bills through this token directly; the token secret never reaches the browser.')}
-                </p>
-              </div>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+  const startFirstProject = () => {
+    const defaultCap =
+      capabilities.find((item) => item.media_type === 'image') ?? capabilities[0]
+    createMutation.mutate({
+      name: t('Untitled design'),
+      kind: defaultCap?.media_type ?? 'image',
+      capability_id: defaultCap?.id ?? '',
+      token_id: keys[0]?.id ?? 0,
+    })
+  }
 
-      {project && draft ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('Requirements & Parameters')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {presets.length > 0 ? (
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">
-                  {t('Scene presets')}
-                </Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {presets.map((preset, index) => {
-                    const label =
-                      typeof preset.name === 'string' && preset.name
-                        ? preset.name
-                        : typeof preset.id === 'string' && preset.id
-                          ? preset.id
-                          : `Preset ${index + 1}`
-                    return (
-                      <Button
-                        key={String(preset.id ?? index)}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 px-2.5 text-xs"
-                        disabled={!editable}
-                        onClick={() =>
-                          setDraft(
-                            applyCapabilityPreset(draft, preset, paramSchema)
-                          )
-                        }
-                      >
-                        <Sparkles className="mr-1 h-3 w-3" />
-                        {label}
-                      </Button>
-                    )
-                  })}
-                </div>
-              </div>
-            ) : null}
-            {deferredSchemaQuery.isLoading ? (
-              <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{t('Loading…')}</span>
-              </div>
-            ) : null}
-            {paramSchema ? (
-              <SchemaForm
-                schema={paramSchema}
-                values={draft.parameters}
-                disabled={!editable}
-                onChange={(name, value) =>
-                  setDraft({
-                    ...draft,
-                    parameters: { ...draft.parameters, [name]: value },
-                  })
-                }
-              />
-            ) : null}
-            {!hasSchemaPrompt && !deferredSchemaQuery.isLoading ? (
-              <div className="space-y-2">
-                <Label>{t('Prompt')} *</Label>
-                <Textarea
-                  rows={4}
-                  value={promptText}
-                  disabled={!editable}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      parameters: {
-                        ...draft.parameters,
-                        prompt: event.target.value,
-                      },
-                    })
-                  }
-                />
-              </div>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!editable || busy}
-                onClick={saveDraft}
-              >
-                {t('Save draft')}
-              </Button>
-              <Button
-                size="sm"
-                disabled={!editable || busy || draft.capability_id === '' || draft.token_id === 0}
-                onClick={() => planMutation.mutate()}
-              >
-                {planMutation.isPending ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                ) : null}
-                {t('Plan & cost sheet')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+  const renderEntry = () => {
+    if (!project || !draft) return null
+    return (
+      <EntryPicker
+        kind={draft.kind}
+        onKindChange={(kind) => {
+          const matching = filterCapabilitiesByKind(capabilities, kind)
+          const currentKept = matching.some(
+            (item) => item.id === draft.capability_id
+          )
+          setDraft({
+            ...draft,
+            kind,
+            capability_id: currentKept
+              ? draft.capability_id
+              : (matching[0]?.id ?? ''),
+            parameters: currentKept ? draft.parameters : {},
+          })
+        }}
+        capabilities={capabilities}
+        capabilityId={draft.capability_id}
+        onCapabilityChange={(id) => {
+          const selected = capabilities.find((item) => item.id === id)
+          setDraft({
+            ...draft,
+            kind: selected?.media_type ?? draft.kind,
+            capability_id: id,
+            parameters: {},
+          })
+        }}
+        tokenId={draft.token_id}
+        onTokenChange={(id) => setDraft({ ...draft, token_id: id })}
+        keys={keys}
+      />
+    )
+  }
 
-      {errorText ? (
-        <div className="text-destructive flex items-start gap-2 text-sm">
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{errorText}</span>
-        </div>
+  const renderBrief = () => {
+    if (!draft) return null
+    return (
+      <BriefForm
+        name={draft.name}
+        onNameChange={(value) => setDraft({ ...draft, name: value })}
+        role={draft.role}
+        onRoleChange={(value) => setDraft({ ...draft, role: value })}
+        brief={draft.brief}
+        onBriefChange={(value) => setDraft({ ...draft, brief: value })}
+        parameters={draft.parameters}
+        onParameterChange={(name, value) =>
+          setDraft({
+            ...draft,
+            parameters: { ...draft.parameters, [name]: value },
+          })
+        }
+        schema={paramSchema}
+        schemaLoading={deferredSchemaQuery.isLoading}
+        presets={capability?.presets ?? []}
+        kind={draft.kind}
+        referenceLimits={capability?.reference_limits}
+        onPresetClick={(preset) =>
+          setDraft(applyCapabilityPreset(draft, preset, paramSchema))
+        }
+      />
+    )
+  }
+
+  const renderPreview = () => {
+    const confirmed = project?.status === 'ready'
+    const canConfirm =
+      project?.status === 'awaiting_confirmation' || project?.status === 'draft'
+    return (
+      <ConfirmPanel
+        outputs={
+          steps.length > 0
+            ? steps.map((item) => item.role).join('、')
+            : (draft?.role ?? '-')
+        }
+        model={capability?.model ?? steps[0]?.model ?? '-'}
+        specs={primarySpec.summary || '-'}
+        inputMode={primarySpec.inputMode}
+        referenceUsage={
+          primarySpec.referenceCount > 0
+            ? describeReferenceUsage(
+                steps[0]?.parameters ?? project?.parameters ?? '',
+                capability?.reference_limits
+              )
+            : undefined
+        }
+        estimateText={
+          project?.estimate ? formatQuota(project.estimate.quota_per_call) : '-'
+        }
+        confirmText={t(
+          'The estimate is for confirmation only; settlement follows the real usage the plugin reports, and failures are refunded automatically.'
+        )}
+        confirmed={confirmed}
+        onConfirm={() => confirmMutation.mutate()}
+        onRun={() => runMutation.mutate()}
+        onAdjust={() => setStep('brief')}
+        confirming={confirmMutation.isPending}
+        running={runMutation.isPending}
+        generating={project?.status === 'generating'}
+        canGenerate={canConfirm || confirmed}
+        missingHint={
+          missing.length > 0
+            ? t('Still needed: {fields}', { fields: missing.join('、') })
+            : undefined
+        }
+      />
+    )
+  }
+
+  const regenerate = () => {
+    if (!draft) return
+    // Keep the model and format, drop the prompt: the user asked for another
+    // take, not a rerun of the identical request.
+    setDraft({ ...draft, parameters: {} })
+    setStep('brief')
+  }
+
+  const renderResult = () => (
+    <div className='space-y-4'>
+      <AssetBoard
+        steps={steps}
+        generating={project?.status === 'generating'}
+        onAdjust={() => setStep('brief')}
+        onRegenerate={regenerate}
+      />
+      {steps.length > 0 ? (
+        <RunStatus
+          steps={steps}
+          onRetry={(stepId) => retryMutation.mutate(stepId)}
+          retrying={retryMutation.isPending}
+          specSummary={(item) => {
+            const spec = summarizeStepSpec(item.parameters)
+            if (spec.summary) return spec.summary
+            return t('No extra settings')
+          }}
+        />
       ) : null}
     </div>
   )
 
-  const renderAssetsPanel = () => {
-    const steps = Array.isArray(project?.steps) ? project.steps : []
-    const assetsByRole = new Map<string, DesignStepWithAssets['assets']>()
-    steps.forEach((step) => {
-      const assets = step.assets ?? []
-      if (assets.length === 0) return
-      assetsByRole.set(step.role, [
-        ...(assetsByRole.get(step.role) ?? []),
-        ...assets,
-      ])
-    })
+  if (capabilitiesQuery.isLoading) {
     return (
-      <div className="space-y-4">
-        {assetsByRole.size === 0 ? (
-          <Card>
-            <CardContent className="text-muted-foreground py-10 text-center text-sm">
-              {t('Finished assets appear here one by one as tasks complete')}
-            </CardContent>
-          </Card>
-        ) : null}
-        {[...assetsByRole.entries()].map(([role, assets]) => (
-          <Card key={role}>
-            <CardHeader>
-              <CardTitle className="text-base">{role}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {(assets ?? []).map((asset, index) => (
-                  <AssetItem
-                    key={asset.id}
-                    url={asset.url ?? ''}
-                    mimeType={asset.mime_type}
-                    index={index}
-                  />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <SectionPageLayout>
+        <SectionPageLayout.Title>{t('AI Design')}</SectionPageLayout.Title>
+        <SectionPageLayout.Content>
+          <LoadingState message={t('Loading…')} />
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
     )
   }
 
-  const renderWorkflowPanel = () => {
-    const steps = Array.isArray(project?.steps) ? project.steps : []
+  if (capabilities.length === 0) {
     return (
-      <div className="space-y-3">
-        {steps.map((step) => {
-          const spec = summarizeStepSpec(step.parameters)
-          return (
-            <Card key={step.id}>
-              <CardContent className="space-y-2 pt-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        step.status === 'succeeded'
-                          ? 'default'
-                          : step.status === 'failed'
-                            ? 'destructive'
-                            : 'secondary'
-                      }
-                    >
-                      {STEP_STATUS_LABELS[step.status] ?? step.status}
-                    </Badge>
-                    <span className="text-sm font-medium">{step.role}</span>
-                  </div>
-                  {step.status === 'failed' && step.task_id === '' ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => retryMutation.mutate(step.id)}
-                    >
-                      <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                      {t('Retry')}
-                    </Button>
-                  ) : null}
-                </div>
-                <div className="text-muted-foreground text-xs space-y-1">
-                  <div>
-                    {t('Model')}: {step.model} · {t('Operation')}: {step.operation}
-                  </div>
-                  <div>
-                    {t('Input source')}: {spec.inputMode}
-                    {spec.summary ? ` · ${spec.summary}` : ''}
-                  </div>
-                  {step.task_id ? (
-                    <div className="flex items-center gap-1">
-                      <span>task: {step.task_id}</span>
-                      <CopyButton value={step.task_id} />
-                    </div>
-                  ) : null}
-                  {step.status === 'failed' && step.failure_class ? (
-                    <div className="text-destructive">
-                      {FAILURE_LABELS[step.failure_class] ?? step.failure_class}
-                    </div>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
-        {steps.length === 0 ? (
-          <Card>
-            <CardContent className="text-muted-foreground py-10 text-center text-sm">
-              {t('After planning, steps and dependencies appear here')}
-            </CardContent>
-          </Card>
-        ) : null}
-      </div>
+      <SectionPageLayout>
+        <SectionPageLayout.Title>{t('AI Design')}</SectionPageLayout.Title>
+        <SectionPageLayout.Content>
+          <EmptyState
+            icon={ImageIcon}
+            bordered
+            title={t('No models available yet')}
+            description={t(
+              'A model appears here once it is enabled, priced, and reachable. Ask an administrator to enable one.'
+            )}
+          />
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
     )
   }
 
-  const estimate = project?.estimate
-  const showConfirmSheet =
-    project?.status === 'awaiting_confirmation' && estimate != null
-  const primaryStepSpec = summarizeStepSpec(
-    project?.steps?.[0]?.parameters ?? project?.parameters ?? ''
-  )
+  const showEntryGate = !project || !draft
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('AI Design Workbench')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t('AI Design')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         {project ? (
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">
-              {STATUS_LABELS[project.status] ?? project.status}
+          <div className='flex items-center gap-2'>
+            <Badge variant='outline'>
+              {t(PROJECT_STATUS_TEXT[project.status] ?? project.status)}
             </Badge>
-            {showConfirmSheet ? (
-              <Button size="sm" onClick={() => setConfirmOpen(true)}>
-                {t('Confirm cost & ready')}
-              </Button>
-            ) : null}
-            {project.status === 'ready' ? (
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() => runMutation.mutate()}
-              >
-                <Play className="mr-1 h-4 w-4" />
-                {t('Start generation')}
-              </Button>
-            ) : null}
             <Button
-              variant="outline"
-              size="sm"
+              variant='outline'
+              size='sm'
               disabled={busy || project.status === 'generating'}
-              onClick={() => deleteMutation.mutate()}
+              onClick={() => setDeleteOpen(true)}
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className='size-4' />
+              {/* Icon-only control: screen readers still need a name. */}
+              <span className='sr-only'>{t('Delete task')}</span>
             </Button>
           </div>
         ) : null}
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        {/* Mobile: three tabs per §9 */}
-        <div className="md:hidden">
-          <Tabs value={mobileTab} onValueChange={(value) => setMobileTab(value as typeof mobileTab)}>
-            <TabsList className="w-full">
-              <TabsTrigger value="params" className="flex-1">{t('Parameters')}</TabsTrigger>
-              <TabsTrigger value="assets" className="flex-1">{t('Canvas')}</TabsTrigger>
-              <TabsTrigger value="workflow" className="flex-1">{t('Workflow')}</TabsTrigger>
-            </TabsList>
-            <TabsContent value="params">{renderParamsPanel()}</TabsContent>
-            <TabsContent value="assets">{renderAssetsPanel()}</TabsContent>
-            <TabsContent value="workflow">{renderWorkflowPanel()}</TabsContent>
-          </Tabs>
-        </div>
-
-        {/* Desktop: three columns per §9 */}
-        <div className={cn('hidden gap-4 md:grid md:grid-cols-3 xl:grid-cols-4')}>
-          <div className="xl:col-span-1 md:col-span-1">{renderParamsPanel()}</div>
-          <div className="xl:col-span-2 md:col-span-1">{renderAssetsPanel()}</div>
-          <div className="xl:col-span-1 md:col-span-1">{renderWorkflowPanel()}</div>
-        </div>
-
-        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t('Cost confirmation')}</DialogTitle>
-              <DialogDescription>
-                {t('Confirm the outputs and estimated charge; generation unlocks after confirmation.')}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between gap-4">
-                <span>{t('Outputs')}</span>
-                <span className="text-right">
-                  {(project?.steps ?? []).map((step) => step.role).join('、') || '-'}
-                </span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span>{t('Model')}</span>
-                <span className="text-right">{project?.steps?.[0]?.model ?? '-'}</span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span>{t('Specifications')}</span>
-                <span className="text-right">
-                  {primaryStepSpec.summary || '-'}
-                </span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span>{t('Input source')}</span>
-                <span className="text-right">{primaryStepSpec.inputMode}</span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span>{t('Estimated charge')}</span>
-                <span className="font-medium text-right">
-                  {estimate ? formatQuota(estimate.quota_per_call) : '-'}
-                </span>
-              </div>
-              <p className="text-muted-foreground text-xs">
-                {t('The estimate is for confirmation only; settlement follows the real usage the plugin reports, and failures are refunded automatically.')}
+        <div className='space-y-5'>
+          {project ? (
+            <div className='space-y-2'>
+              <StepBar
+                current={step}
+                reached={reached}
+                onStepClick={setStep}
+              />
+              <p className='text-muted-foreground text-sm'>
+                {t(PROJECT_STATUS_HINT[project.status] ?? '')}
               </p>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-                  {t('Back')}
-                </Button>
-                <Button
-                  disabled={confirmMutation.isPending}
-                  onClick={() => confirmMutation.mutate()}
-                >
-                  {confirmMutation.isPending ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : null}
-                  {t('Confirm')}
-                </Button>
-              </div>
             </div>
-          </DialogContent>
-        </Dialog>
+          ) : null}
+
+          {projects.length > 1 ? (
+            <div className='flex flex-wrap items-center gap-2'>
+              {projects.map((item) => (
+                <Button
+                  key={item.id}
+                  variant={item.id === selectedId ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => {
+                    setSelectedId(item.id)
+                    setDraft(null)
+                  }}
+                >
+                  {item.name}
+                </Button>
+              ))}
+              <Button
+                variant='outline'
+                size='sm'
+                disabled={busy}
+                onClick={startFirstProject}
+              >
+                {t('New task')}
+              </Button>
+            </div>
+          ) : null}
+
+          {errorText ? (
+            <div className='text-destructive flex items-start gap-2 text-sm'>
+              <TriangleAlert className='mt-0.5 size-4 shrink-0' />
+              <span>{errorText}</span>
+            </div>
+          ) : null}
+
+          {showEntryGate ? (
+            <EntryEmptyState
+              onStart={startFirstProject}
+              disabled={busy || keys.length === 0}
+            />
+          ) : (
+            <>
+              {/* Mobile: the main line and the results never share a screen. */}
+              <div className='md:hidden'>
+                <Tabs
+                  value={mobileTab}
+                  onValueChange={(value) =>
+                    setMobileTab(value as typeof mobileTab)
+                  }
+                >
+                  <TabsList className='w-full'>
+                    <TabsTrigger value='work' className='flex-1'>
+                      {t('Design')}
+                    </TabsTrigger>
+                    <TabsTrigger value='result' className='flex-1'>
+                      {t('Results')}
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value='work' className='space-y-4'>
+                    {step === 'entry' ? renderEntry() : null}
+                    {step === 'brief' ? renderBrief() : null}
+                    {step === 'preview' ? renderPreview() : null}
+                    {step === 'brief' ? (
+                      <div className='flex justify-end'>
+                        <Button
+                          onClick={() => planMutation.mutate()}
+                          disabled={!canPlan}
+                        >
+                          {t('Review and generate')}
+                        </Button>
+                      </div>
+                    ) : null}
+                    {step === 'preview' ? (
+                      <Button
+                        variant='outline'
+                        onClick={() => setStep('entry')}
+                      >
+                        {t('Change type or model')}
+                      </Button>
+                    ) : null}
+                  </TabsContent>
+                  <TabsContent value='result'>{renderResult()}</TabsContent>
+                </Tabs>
+              </div>
+
+              {/* Desktop: the active step owns the left column, results the right. */}
+              <div className='hidden gap-5 md:grid md:grid-cols-2'>
+                <div className='space-y-4'>
+                  {step === 'entry' ? renderEntry() : null}
+                  {step === 'brief' ? renderBrief() : null}
+                  {step === 'preview' ? renderPreview() : null}
+
+                  {step === 'brief' ? (
+                    <div className='flex justify-end'>
+                      <Button
+                        onClick={() => planMutation.mutate()}
+                        disabled={!canPlan}
+                      >
+                        {planMutation.isPending ? t('Preparing…') : t('Review and generate')}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {step === 'preview' ? (
+                    <Button variant='outline' onClick={() => setStep('entry')}>
+                      {t('Change type or model')}
+                    </Button>
+                  ) : null}
+                </div>
+                <div>{renderResult()}</div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={t('Delete this design task?')}
+          desc={t(
+            'The task and its results are removed. This cannot be undone.'
+          )}
+          destructive
+          isLoading={deleteMutation.isPending}
+          handleConfirm={() => deleteMutation.mutate()}
+        />
       </SectionPageLayout.Content>
     </SectionPageLayout>
   )
