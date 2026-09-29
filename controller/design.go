@@ -734,9 +734,16 @@ func buildDesignProjectView(c *gin.Context, project *model.DesignProject) design
 	}
 
 	syncDesignProjectStatus(project)
-	view := designProjectView{DesignProject: *project, Estimate: estimate}
+	// Steps 必须永远是非 nil 切片：nil 会被序列化成 "steps": null，而前端读
+	// project?.steps[0]，null[0] 直接 TypeError（2026-09-30 线上事故，draft 项目
+	// 无步骤时必现）。空数组才是这个字段的零值契约。
+	view := designProjectView{DesignProject: *project, Estimate: estimate, Steps: []designStepView{}}
 	for _, step := range steps {
-		stepView := designStepView{DesignStep: step, Assets: assetsByStep[step.ID]}
+		stepAssets := assetsByStep[step.ID]
+		if stepAssets == nil {
+			stepAssets = []designAssetView{}
+		}
+		stepView := designStepView{DesignStep: step, Assets: stepAssets}
 		if estimate != nil {
 			stepView.Estimate = estimate
 		}

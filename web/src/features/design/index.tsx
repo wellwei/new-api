@@ -295,7 +295,7 @@ export function Design() {
       if (!data) return false
       const running =
         data.status === 'generating' ||
-        data.steps.some((step) => step.status === 'submitted')
+        (data.steps ?? []).some((step) => step.status === 'submitted')
       return running ? 4000 : false
     },
   })
@@ -872,7 +872,7 @@ export function Design() {
   const showConfirmSheet =
     project?.status === 'awaiting_confirmation' && estimate != null
   const primaryStepSpec = summarizeStepSpec(
-    project?.steps[0]?.parameters ?? project?.parameters ?? ''
+    project?.steps?.[0]?.parameters ?? project?.parameters ?? ''
   )
 
   return (
@@ -944,12 +944,12 @@ export function Design() {
               <div className="flex justify-between gap-4">
                 <span>{t('Outputs')}</span>
                 <span className="text-right">
-                  {project?.steps.map((step) => step.role).join('、') || '-'}
+                  {(project?.steps ?? []).map((step) => step.role).join('、') || '-'}
                 </span>
               </div>
               <div className="flex justify-between gap-4">
                 <span>{t('Model')}</span>
-                <span className="text-right">{project?.steps[0]?.model ?? '-'}</span>
+                <span className="text-right">{project?.steps?.[0]?.model ?? '-'}</span>
               </div>
               <div className="flex justify-between gap-4">
                 <span>{t('Specifications')}</span>

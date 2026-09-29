@@ -267,4 +267,61 @@ describe('Design page component render', () => {
     expect(container.textContent).toContain("主视觉海报")
     expect(screen.getAllByDisplayValue("测试海报项目").length).toBeGreaterThan(0)
   })
+
+  it("renders a draft project without crashing when the API returns steps: null", () => {
+    // 2026-09-30 线上事故：无步骤的 draft 项目被后端序列化成 "steps": null，
+    // 前端 project?.steps[0] 直接 TypeError。后端已改为永远返回数组，这里锁死
+    // 前端对历史 null 形状的容错。
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    client.setQueryData(["design", "capabilities"], [])
+    client.setQueryData(["design", "projects"], {
+      items: [
+        {
+          id: 7,
+          user_id: 1,
+          name: "设计项目",
+          kind: "image",
+          status: "draft",
+          plan_revision: 1,
+          brief: "",
+          role: "",
+          default_capability: "",
+          token_id: 0,
+          parameters: "",
+          created_at: 1,
+          updated_at: 1,
+          steps: null,
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 50,
+    })
+    client.setQueryData(["design", "project", 7], {
+      id: 7,
+      user_id: 1,
+      name: "设计项目",
+      kind: "image",
+      status: "draft",
+      plan_revision: 1,
+      brief: "",
+      role: "",
+      default_capability: "",
+      token_id: 0,
+      parameters: "",
+      created_at: 1,
+      updated_at: 1,
+      steps: null,
+    })
+    client.setQueryData(["design", "api-keys"], [])
+
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <Design />
+      </QueryClientProvider>
+    )
+    expect(container.textContent).toBeTruthy()
+  })
 })
