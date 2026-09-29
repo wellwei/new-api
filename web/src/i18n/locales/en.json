@@ -6851,6 +6851,11 @@
     "Confirm cost & ready": "Confirm cost & ready",
     "This capability has no configurable parameters": "This capability has no configurable parameters",
     "Loading…": "Loading…",
-    "No design capability is available: the workbench switch must be on, and a workbench plugin capability must be priced with an available channel.": "No design capability is available: the workbench switch must be on, and a workbench plugin capability must be priced with an available channel."
+    "No design capability is available: the workbench switch must be on, and a workbench plugin capability must be priced with an available channel.": "No design capability is available: the workbench switch must be on, and a workbench plugin capability must be priced with an available channel.",
+    "Enable AI design workbench": "Enable AI design workbench",
+    "Exposes the AI design workbench (/design) backed by task plugin workbench capabilities.": "Exposes the AI design workbench (/design) backed by task plugin workbench capabilities.",
+    "Scene presets": "Scene presets",
+    "Specifications": "Specifications",
+    "Input source": "Input source"
   }
 }

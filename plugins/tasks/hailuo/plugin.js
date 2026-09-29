@@ -135,6 +135,57 @@ export const meta = {
     },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  workbench: {
+    schemaVersion: 1,
+    capabilities: ["MiniMax-H3", "MiniMax-Hailuo-2.3", "MiniMax-Hailuo-02", "T2V-01"].map((model) => ({
+      id: "hailuo:" + model,
+      model: model,
+      mediaType: "video",
+      operations: ["generate"],
+      deferSchema: true,
+      referenceLimits: { maxImages: 1 },
+      parameterSchema: {
+        type: "object",
+        required: ["prompt"],
+        additionalProperties: false,
+        properties: {
+          prompt: {
+            type: "string",
+            title: "镜头与运动描述 (Prompt)",
+            minLength: 1,
+            maxLength: 2000,
+          },
+          resolution: {
+            type: "string",
+            title: "分辨率 (Resolution)",
+            enum: ["768P", "1080P"],
+            default: "768P",
+          },
+          seconds: {
+            type: "integer",
+            title: "时长（秒）",
+            enum: [6, 10],
+            default: 6,
+          },
+        },
+      },
+      presets: [
+        {
+          id: "hailuo-standard",
+          name: "标准镜头 (6s · 768P)",
+          role: "短视频主镜头",
+          parameters: { resolution: "768P", seconds: 6 },
+        },
+        {
+          id: "hailuo-hd",
+          name: "高清镜头 (6s · 1080P)",
+          role: "高清展示镜头",
+          parameters: { resolution: "1080P", seconds: 6 },
+        },
+      ],
+      delivery: { canvas: "player" },
+    })),
+  },
 };
 
 function trimmed(value) {

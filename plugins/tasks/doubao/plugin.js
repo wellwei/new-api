@@ -277,6 +277,59 @@ export const meta = {
     { name: "openai_responses", supports: ["stream", "sync", "background"] },
     { name: "openai_video", models: Object.keys(VIDEO_MODELS) },
   ],
+  workbench: {
+    schemaVersion: 1,
+    capabilities: Object.keys(VIDEO_MODELS).map((model) => ({
+      id: "doubao:" + model,
+      model: model,
+      mediaType: "video",
+      operations: ["generate"],
+      deferSchema: true,
+      referenceLimits: { maxImages: 1 },
+      parameterSchema: {
+        type: "object",
+        required: ["prompt"],
+        additionalProperties: false,
+        properties: {
+          prompt: {
+            type: "string",
+            title: "镜头与运动描述 (Prompt)",
+            minLength: 1,
+            maxLength: 2500,
+            description: "描述主体动作、单镜头运动（推进/拉远/横摇/环绕）、光线与结束状态",
+          },
+          resolution: {
+            type: "string",
+            title: "分辨率 (Resolution)",
+            enum: VIDEO_MODELS[model].resolutions,
+            default: "720p",
+          },
+          seconds: {
+            type: "integer",
+            title: "时长（秒）",
+            minimum: 4,
+            maximum: 30,
+            default: 5,
+          },
+        },
+      },
+      presets: [
+        {
+          id: "short-video",
+          name: "竖屏短视频 (5s · 720p)",
+          role: "短视频主镜头",
+          parameters: { resolution: "720p", seconds: 5 },
+        },
+        {
+          id: "hd-showcase",
+          name: "高清产品展示 (5s · 720p)",
+          role: "产品展示主镜头",
+          parameters: { resolution: "720p", seconds: 5 },
+        },
+      ],
+      delivery: { canvas: "player" },
+    })),
+  },
 };
 
 function trimmed(value) {

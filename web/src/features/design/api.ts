@@ -21,6 +21,7 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
   DesignCapability,
+  DesignParameterSchema,
   DesignProject,
   DesignProjectInput,
   DesignProjectListResponse,
@@ -33,16 +34,17 @@ import type {
 
 export async function getDesignCapabilities(): Promise<DesignCapability[]> {
   const res = await api.get('/api/design/capabilities')
-  return requireServerSuccess(res).data ?? []
+  const data = requireServerSuccess(res.data)?.data
+  return Array.isArray(data) ? data : []
 }
 
 export async function getDesignCapabilitySchema(
   capabilityId: string
-): Promise<Record<string, unknown>> {
+): Promise<DesignParameterSchema> {
   const res = await api.get(
     `/api/design/capabilities/${encodeURIComponent(capabilityId)}/schema`
   )
-  return requireServerSuccess(res).data ?? {}
+  return requireServerSuccess(res.data)?.data ?? {}
 }
 
 export async function listDesignProjects(params: {
@@ -51,21 +53,27 @@ export async function listDesignProjects(params: {
 } = {}): Promise<DesignProjectListResponse> {
   const { p = 1, size = 50 } = params
   const res = await api.get(`/api/design/projects?p=${p}&size=${size}`)
-  return requireServerSuccess(res).data
+  const data = requireServerSuccess(res.data)?.data
+  return {
+    items: Array.isArray(data?.items) ? data.items : [],
+    total: typeof data?.total === 'number' ? data.total : 0,
+    page: typeof data?.page === 'number' ? data.page : p,
+    size: typeof data?.size === 'number' ? data.size : size,
+  }
 }
 
 export async function getDesignProject(
   id: number
 ): Promise<DesignProjectView> {
   const res = await api.get(`/api/design/projects/${id}`)
-  return requireServerSuccess(res).data
+  return requireServerSuccess(res.data).data
 }
 
 export async function createDesignProject(
   input: DesignProjectInput
 ): Promise<DesignProject> {
   const res = await api.post('/api/design/projects', input)
-  return requireServerSuccess(res).data
+  return requireServerSuccess(res.data).data
 }
 
 export async function updateDesignProject(
@@ -73,26 +81,26 @@ export async function updateDesignProject(
   input: Partial<DesignProjectInput>
 ): Promise<DesignProject> {
   const res = await api.patch(`/api/design/projects/${id}`, input)
-  return requireServerSuccess(res).data
+  return requireServerSuccess(res.data).data
 }
 
 export async function deleteDesignProject(id: number): Promise<void> {
   const res = await api.delete(`/api/design/projects/${id}`)
-  requireServerSuccess(res)
+  requireServerSuccess(res.data)
 }
 
 export async function planDesignProject(
   id: number
 ): Promise<DesignProjectView> {
   const res = await api.post(`/api/design/projects/${id}/plan`, {})
-  return requireServerSuccess(res).data
+  return requireServerSuccess(res.data).data
 }
 
 export async function confirmDesignProject(
   id: number
 ): Promise<DesignProjectView> {
   const res = await api.post(`/api/design/projects/${id}/confirm`, {})
-  return requireServerSuccess(res).data
+  return requireServerSuccess(res.data).data
 }
 
 export async function runDesignProject(
@@ -102,7 +110,7 @@ export async function runDesignProject(
   const payload = requireServerSuccess<{
     data: DesignProjectView
     message?: string
-  }>(res)
+  }>(res.data)
   // A submission failure inside a run is reported in the message field while
   // the refreshed project view still comes back, so the UI can show both.
   return {
@@ -119,5 +127,5 @@ export async function retryDesignStep(
     `/api/design/projects/${projectId}/steps/${stepId}/retry`,
     {}
   )
-  return requireServerSuccess(res).data
+  return requireServerSuccess(res.data).data
 }

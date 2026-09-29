@@ -68,6 +68,19 @@ function placeholderOf(property: DesignParameterProperty): string {
   return ''
 }
 
+export function defaultValuesFromSchema(
+  schema: DesignParameterSchema | null | undefined
+): Record<string, unknown> {
+  if (!schema?.properties) return {}
+  const defaults: Record<string, unknown> = {}
+  for (const [key, prop] of Object.entries(schema.properties)) {
+    if (prop && !isHidden(prop) && prop.default !== undefined) {
+      defaults[key] = prop.default
+    }
+  }
+  return defaults
+}
+
 /**
  * Renders the workbench capability's parameterSchema as a form. Only the
  * backend-vetted keywords drive behavior: enum -> select, constraints ->
@@ -102,7 +115,8 @@ export function SchemaForm({ schema, values, onChange, disabled }: SchemaFormPro
                 (item): item is string => typeof item === 'string'
               ) ?? [])
         const title = propertyTitle(name, property)
-        const value = values[name]
+        const rawValue = values[name]
+        const value = rawValue !== undefined ? rawValue : property.default
         const valueText = value == null ? '' : String(value)
 
         if (candidates.length > 0) {
@@ -223,7 +237,7 @@ export function SchemaForm({ schema, values, onChange, disabled }: SchemaFormPro
                 onChange={(event) => onChange(name, event.target.value)}
               />
             )}
-            {property.description && !isLongForm ? (
+            {property.description ? (
               <p className="text-muted-foreground text-xs">
                 {property.description}
               </p>

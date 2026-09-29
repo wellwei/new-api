@@ -19,7 +19,17 @@ import (
 // the configured TaskArtifactStore exactly once. Failures only degrade to live
 // upstream proxying — they never fail the task, which has already succeeded.
 
-var artifactPersistHTTPClient = service.GetHttpClient()
+var artifactPersistHTTPClient *http.Client
+
+func getArtifactPersistHTTPClient() *http.Client {
+	if artifactPersistHTTPClient != nil {
+		return artifactPersistHTTPClient
+	}
+	if client := service.GetHttpClient(); client != nil {
+		return client
+	}
+	return http.DefaultClient
+}
 
 // persistArtifactsForTask copies every projected artifact of a succeeded task
 // into the store. It is invoked via the service hook after task success.
@@ -85,7 +95,7 @@ func fetchArtifactContent(task *model.Task, artifactKey string) (io.ReadCloser, 
 	for k, v := range descriptor.Headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := artifactPersistHTTPClient.Do(req)
+	resp, err := getArtifactPersistHTTPClient().Do(req)
 	if err != nil {
 		return nil, "", err
 	}

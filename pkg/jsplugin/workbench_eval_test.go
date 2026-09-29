@@ -149,3 +149,51 @@ func TestEvaluateWorkbenchParamsMissingOptionalAllowed(t *testing.T) {
 		t.Fatalf("expected pass, got %v", err)
 	}
 }
+
+func TestApplyWorkbenchDefaultsMaterializesDefaultsAndAnnotations(t *testing.T) {
+	schema := map[string]any{
+		"x-append": "高清商业质感",
+		"properties": map[string]any{
+			"prompt": map[string]any{
+				"type":     "string",
+				"x-append": "无乱码文字",
+			},
+			"size": map[string]any{
+				"type":    "string",
+				"default": "1024x1024",
+			},
+			"n": map[string]any{
+				"type":    "integer",
+				"default": float64(1),
+			},
+			"style_preset": map[string]any{
+				"type":          "string",
+				"x-fixed-model": "studio-kv",
+				"x-hidden":      true,
+			},
+		},
+	}
+
+	got := ApplyWorkbenchDefaults(schema, map[string]any{
+		"prompt": "极简咖啡品牌主视觉",
+		"size":   "",
+	})
+	if got["size"] != "1024x1024" {
+		t.Fatalf("expected default size 1024x1024, got %v", got["size"])
+	}
+	if got["n"] != float64(1) {
+		t.Fatalf("expected default n 1, got %v", got["n"])
+	}
+	if got["style_preset"] != "studio-kv" {
+		t.Fatalf("expected x-fixed-model studio-kv, got %v", got["style_preset"])
+	}
+	if got["prompt"] != "极简咖啡品牌主视觉 无乱码文字 高清商业质感" {
+		t.Fatalf("expected x-append prompt, got %v", got["prompt"])
+	}
+
+	// Idempotent when re-applied
+	again := ApplyWorkbenchDefaults(schema, got)
+	if again["prompt"] != got["prompt"] {
+		t.Fatalf("expected idempotent x-append, got %v", again["prompt"])
+	}
+}

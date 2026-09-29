@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var expectedKeys = []string{"alibaba", "doubao", "google", "hailuo", "jimeng", "kling", "sora", "sunoapi", "vertex-ai", "vidu"}
+var expectedKeys = []string{"alibaba", "doubao", "google", "hailuo", "jimeng", "kling", "sora", "sunoapi", "vertex-ai", "vidu", "workbuddy"}
 
 func TestBuiltInVendorPluginsDeclareNativeRoutesAndLegacyChannelTypes(t *testing.T) {
 	generation := jsplugin.DefaultRegistry.Generation()
@@ -371,4 +371,78 @@ func TestBuiltInPluginsAddressNewAPIUpstreamOnNativeRoutes(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestBuiltInTaskPluginWorkbenchCapabilities(t *testing.T) {
+	generation := jsplugin.DefaultRegistry.Generation()
+	require.NotNil(t, generation)
+
+	workbenchPlugins := []string{"alibaba", "doubao", "google", "hailuo", "jimeng", "kling", "sora", "vertex-ai", "vidu", "workbuddy"}
+	for _, key := range workbenchPlugins {
+		t.Run(key, func(t *testing.T) {
+			plugin, found := generation.Get(key)
+			require.True(t, found, key)
+			require.NotNil(t, plugin.Meta.Workbench, "%s must declare meta.workbench", key)
+			assert.Equal(t, jsplugin.WorkbenchSchemaVersion, plugin.Meta.Workbench.SchemaVersion)
+			require.NotEmpty(t, plugin.Meta.Workbench.Capabilities)
+
+			for _, cap := range plugin.Meta.Workbench.Capabilities {
+				assert.Contains(t, plugin.Meta.Models, cap.Model, "capability %s model must belong to plugin.Meta.Models", cap.ID)
+				require.NotNil(t, cap.ParameterSchema, "capability %s must declare parameterSchema", cap.ID)
+				require.NotEmpty(t, cap.Presets, "capability %s must declare domain presets", cap.ID)
+
+				var endpointPath, protocolName string
+				switch cap.MediaType {
+				case "image":
+					endpointPath = "/v1/images/generations"
+					protocolName = "openai_image"
+				case "video":
+					endpointPath = "/v1/videos"
+					protocolName = "openai_video"
+				default:
+					t.Fatalf("unexpected mediaType %q on %s", cap.MediaType, cap.ID)
+				}
+
+				source, sourceErr := Source(key)
+				require.NoError(t, sourceErr)
+				isolated := jsplugin.NewRegistry()
+				isolatedPlugin, regErr := isolated.RegisterFactory(source, jsplugin.Options{Key: key})
+				require.NoError(t, regErr)
+				binding, claimed := isolated.Generation().LookupEndpoint("POST", endpointPath, cap.Model)
+				require.True(t, claimed, "capability %s model %s must be claimed on %s", cap.ID, cap.Model, endpointPath)
+				assert.Same(t, isolatedPlugin, binding.Plugin)
+
+				// Verify default materialization + schema evaluation + protocol decodeRequest
+				params := jsplugin.ApplyWorkbenchDefaults(cap.ParameterSchema, map[string]any{
+					"prompt": "A studio product showcase with clean lighting",
+				})
+				require.NoError(t, jsplugin.EvaluateWorkbenchParams(cap.ParameterSchema, params), cap.ID)
+
+				body := make(map[string]any, len(params)+1)
+				for k, v := range params {
+					body[k] = v
+				}
+				body["model"] = cap.Model
+				_, decodeErr := plugin.Engine.CallPath(t.Context(), "protocols", []string{protocolName, "decodeRequest"}, map[string]any{
+					"model":         cap.Model,
+					"upstreamModel": cap.Model,
+					"operation":     "generate",
+					"body":          map[string]any{"kind": "json", "value": body},
+				})
+				require.NoError(t, decodeErr, "capability %s default params must decode cleanly in %s", cap.ID, protocolName)
+
+				// Also verify every preset's parameters
+				for _, preset := range cap.Presets {
+					presetParams, _ := preset["parameters"].(map[string]any)
+					merged := make(map[string]any, len(presetParams)+1)
+					for k, v := range presetParams {
+						merged[k] = v
+					}
+					merged["prompt"] = "A studio product showcase with clean lighting"
+					merged = jsplugin.ApplyWorkbenchDefaults(cap.ParameterSchema, merged)
+					require.NoError(t, jsplugin.EvaluateWorkbenchParams(cap.ParameterSchema, merged), "%s preset %v", cap.ID, preset["id"])
+				}
+			}
+		})
+	}
 }

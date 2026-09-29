@@ -164,6 +164,9 @@ func (s *FilesystemArtifactStore) Persist(ctx context.Context, task *model.Task,
 
 	// Stream to a temp file while hashing and sizing; enforce per-object cap.
 	maxObject := s.cfg.FilesystemMaxObjectBytes
+	if err := os.MkdirAll(s.storageDir(), 0o755); err != nil {
+		return nil, fmt.Errorf("persist: mkdir root: %w", err)
+	}
 	tmp, err := os.CreateTemp(s.storageDir(), ".artifact-*")
 	if err != nil {
 		return nil, fmt.Errorf("persist: create temp: %w", err)

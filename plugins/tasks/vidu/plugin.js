@@ -47,6 +47,54 @@ export const meta = {
     { label: "2.0 8s 720p", facts: { credits: 0, duration: 8, resolution: "720p" } },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  workbench: {
+    schemaVersion: 1,
+    capabilities: ["viduq2", "viduq1", "vidu1.5"].map((model) => ({
+      id: "vidu:" + model,
+      model: model,
+      mediaType: "video",
+      operations: ["generate"],
+      deferSchema: true,
+      referenceLimits: { maxImages: 1 },
+      parameterSchema: {
+        type: "object",
+        required: ["prompt"],
+        additionalProperties: false,
+        properties: {
+          prompt: {
+            type: "string",
+            title: "镜头与运动描述 (Prompt)",
+            minLength: 1,
+            maxLength: 2000,
+          },
+          resolution: {
+            type: "string",
+            title: "分辨率 (Resolution)",
+            enum: model === "viduq1" ? ["1080p"] : ["720p", "1080p"],
+            default: model === "viduq1" ? "1080p" : "720p",
+          },
+          seconds: {
+            type: "integer",
+            title: "时长（秒）",
+            enum: model === "vidu2.0" ? [4, 8] : [5],
+            default: model === "vidu2.0" ? 4 : 5,
+          },
+        },
+      },
+      presets: [
+        {
+          id: "vidu-default",
+          name: "标准短片镜头",
+          role: "主叙事镜头",
+          parameters: {
+            resolution: model === "viduq1" ? "1080p" : "720p",
+            seconds: model === "vidu2.0" ? 4 : 5,
+          },
+        },
+      ],
+      delivery: { canvas: "player" },
+    })),
+  },
 };
 
 const RESOLUTIONS = ["360p", "540p", "720p", "1080p"];

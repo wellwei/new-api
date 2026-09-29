@@ -35,6 +35,51 @@ export const meta = {
     { method: "GET", path: "/kling/v1/videos/text2video/:task_id", type: "query", render: "taskStatus" },
     { method: "GET", path: "/kling/v1/videos/image2video/:task_id", type: "query", render: "taskStatus" },
   ],
+  workbench: {
+    schemaVersion: 1,
+    capabilities: ["kling-v2-master", "kling-v1-6", "kling-v1"].map((model) => ({
+      id: "kling:" + model,
+      model: model,
+      mediaType: "video",
+      operations: ["generate"],
+      deferSchema: true,
+      referenceLimits: { maxImages: 1 },
+      parameterSchema: {
+        type: "object",
+        required: ["prompt"],
+        additionalProperties: false,
+        properties: {
+          prompt: {
+            type: "string",
+            title: "镜头与运动描述 (Prompt)",
+            minLength: 1,
+            maxLength: 2500,
+          },
+          mode: {
+            type: "string",
+            title: "生成模式 (Mode)",
+            enum: model === "kling-v2-master" ? ["pro"] : ["std", "pro"],
+            default: "pro",
+          },
+          seconds: {
+            type: "integer",
+            title: "时长（秒）",
+            enum: [5, 10],
+            default: 5,
+          },
+        },
+      },
+      presets: [
+        {
+          id: "kling-pro-5s",
+          name: "专业品质镜头 (5s · Pro)",
+          role: "主视觉动态镜头",
+          parameters: { mode: "pro", seconds: 5 },
+        },
+      ],
+      delivery: { canvas: "player" },
+    })),
+  },
 };
 
 // Official unit consumption (units per output video second), not a currency price.

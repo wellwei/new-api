@@ -23,6 +23,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  Sparkles,
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
@@ -58,12 +59,16 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiKeys } from '@/features/keys/api'
-import { SchemaForm } from '@/features/design/schema-form'
+import {
+  defaultValuesFromSchema,
+  SchemaForm,
+} from '@/features/design/schema-form'
 import {
   confirmDesignProject,
   createDesignProject,
   deleteDesignProject,
   getDesignCapabilities,
+  getDesignCapabilitySchema,
   getDesignProject,
   listDesignProjects,
   planDesignProject,
@@ -73,6 +78,8 @@ import {
 } from '@/features/design/api'
 import type {
   DesignCapability,
+  DesignCapabilityPreset,
+  DesignParameterSchema,
   DesignProjectView,
   DesignStepWithAssets,
 } from '@/features/design/types'
@@ -103,7 +110,7 @@ const FAILURE_LABELS: Record<string, string> = {
   upstream_failed: '上游任务失败',
 }
 
-type DraftState = {
+export type DraftState = {
   name: string
   kind: 'image' | 'video'
   capability_id: string
@@ -113,7 +120,7 @@ type DraftState = {
   parameters: Record<string, unknown>
 }
 
-function draftFromProject(project: DesignProjectView): DraftState {
+export function draftFromProject(project: DesignProjectView): DraftState {
   let parameters: Record<string, unknown> = {}
   try {
     parameters = project.parameters ? JSON.parse(project.parameters) : {}
@@ -128,6 +135,91 @@ function draftFromProject(project: DesignProjectView): DraftState {
     role: project.role || '主视觉',
     brief: project.brief ?? '',
     parameters,
+  }
+}
+
+export function filterCapabilitiesByKind(
+  capabilities: DesignCapability[],
+  kind: 'image' | 'video'
+): DesignCapability[] {
+  const matched = capabilities.filter((item) => item.media_type === kind)
+  return matched.length > 0 ? matched : capabilities
+}
+
+export function applyCapabilityPreset(
+  draft: DraftState,
+  preset: DesignCapabilityPreset,
+  schema?: DesignParameterSchema | null
+): DraftState {
+  const defaults = defaultValuesFromSchema(schema)
+  const presetParams =
+    preset.parameters && typeof preset.parameters === 'object'
+      ? preset.parameters
+      : {}
+  const nextRole =
+    typeof preset.role === 'string' && preset.role.trim() !== ''
+      ? preset.role.trim()
+      : draft.role
+  return {
+    ...draft,
+    role: nextRole,
+    parameters: {
+      ...defaults,
+      ...draft.parameters,
+      ...presetParams,
+    },
+  }
+}
+
+const REFERENCE_PARAM_KEYS = [
+  'image',
+  'first_frame_image',
+  'last_frame_image',
+  'reference_images',
+] as const
+
+const SPEC_DISPLAY_KEYS = [
+  'aspect_ratio',
+  'resolution',
+  'size',
+  'duration',
+  'count',
+  'generate_audio',
+] as const
+
+export function summarizeStepSpec(parametersRaw: string): {
+  summary: string
+  inputMode: string
+  prompt: string
+} {
+  let parsed: Record<string, unknown> = {}
+  try {
+    parsed = parametersRaw ? JSON.parse(parametersRaw) : {}
+  } catch {
+    parsed = {}
+  }
+  const hasReference = REFERENCE_PARAM_KEYS.some((key) => {
+    const val = parsed[key]
+    if (Array.isArray(val)) return val.length > 0
+    if (typeof val === 'string') return val.trim() !== ''
+    return val != null
+  })
+  const inputMode = hasReference ? '参考图驱动' : '纯文字生成'
+  const parts: string[] = []
+  for (const key of SPEC_DISPLAY_KEYS) {
+    const val = parsed[key]
+    if (val === undefined || val === null || val === '') continue
+    if (typeof val === 'boolean') {
+      parts.push(`${key}=${val ? '开启' : '关闭'}`)
+    } else {
+      parts.push(`${key}=${String(val)}`)
+    }
+  }
+  const prompt = typeof parsed['prompt'] === 'string' ? parsed['prompt'] : ''
+  return {
+    summary: parts.join(' · '),
+    inputMode,
+    prompt,
   }
 }
 
@@ -180,14 +272,18 @@ export function Design() {
     queryFn: getDesignCapabilities,
     staleTime: 60 * 1000,
   })
-  const capabilities: DesignCapability[] = capabilitiesQuery.data ?? []
+  const capabilities: DesignCapability[] = Array.isArray(capabilitiesQuery.data)
+    ? capabilitiesQuery.data
+    : []
 
   const projectsQuery = useQuery({
     queryKey: ['design', 'projects'],
     queryFn: () => listDesignProjects({ p: 1, size: 50 }),
     staleTime: 10 * 1000,
   })
-  const projects = projectsQuery.data?.items ?? []
+  const projects = Array.isArray(projectsQuery.data?.items)
+    ? projectsQuery.data.items
+    : []
 
   const projectQuery = useQuery({
     queryKey: ['design', 'project', selectedId],
@@ -213,20 +309,40 @@ export function Design() {
     },
     staleTime: 30 * 1000,
   })
-  const keys = keysQuery.data ?? []
+  const keys = Array.isArray(keysQuery.data) ? keysQuery.data : []
 
   useEffect(() => {
-    if (project && (draft == null || draft.name !== project.name)) {
+    if (selectedId === null && projects.length > 0) {
+      setSelectedId(projects[0].id)
+    }
+  }, [selectedId, projects])
+
+  useEffect(() => {
+    if (project) {
       setDraft(draftFromProject(project))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id])
+
+  const filteredCapabilities = useMemo(
+    () => filterCapabilitiesByKind(capabilities, draft?.kind ?? 'image'),
+    [capabilities, draft?.kind]
+  )
 
   const capability = useMemo(
     () =>
       capabilities.find((item) => item.id === draft?.capability_id) ?? null,
     [capabilities, draft?.capability_id]
   )
+
+  const deferredSchemaQuery = useQuery({
+    queryKey: ['design', 'capability-schema', capability?.id],
+    queryFn: () => getDesignCapabilitySchema(capability!.id),
+    enabled: Boolean(
+      capability?.id && capability.defer_schema && !capability.parameter_schema
+    ),
+    staleTime: 5 * 60 * 1000,
+  })
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['design'] })
@@ -281,7 +397,10 @@ export function Design() {
       })
       return planDesignProject(selectedId)
     },
-    onSuccess: () => invalidate(),
+    onSuccess: (planned) => {
+      setDraft(draftFromProject(planned))
+      invalidate()
+    },
     onError: (error: Error) => setErrorText(error.message),
   })
 
@@ -341,10 +460,15 @@ export function Design() {
     createMutation.isPending
 
   const editable =
-    project?.status === 'draft' || project?.status === 'awaiting_confirmation'
+    project?.status === 'draft' ||
+    project?.status === 'awaiting_confirmation' ||
+    project?.status === 'ready'
 
-  const paramSchema = capability?.parameter_schema ?? null
-  const hasPrompt = (draft?.parameters['prompt'] as string | undefined) ?? ''
+  const paramSchema: DesignParameterSchema | null =
+    capability?.parameter_schema ?? deferredSchemaQuery.data ?? null
+  const hasSchemaPrompt = Boolean(paramSchema?.properties?.['prompt'])
+  const promptText = (draft?.parameters['prompt'] as string | undefined) ?? ''
+  const presets = capability?.presets ?? []
 
   const renderParamsPanel = () => (
     <div className="space-y-4">
@@ -386,14 +510,17 @@ export function Design() {
               variant="outline"
               size="sm"
               disabled={busy}
-              onClick={() =>
+              onClick={() => {
+                const defaultCap =
+                  capabilities.find((item) => item.media_type === 'image') ??
+                  capabilities[0]
                 createMutation.mutate({
                   name: `设计项目 ${new Date().toLocaleString()}`,
-                  kind: 'image',
-                  capability_id: capabilities[0]?.id ?? '',
+                  kind: defaultCap?.media_type ?? 'image',
+                  capability_id: defaultCap?.id ?? '',
                   token_id: keys[0]?.id ?? 0,
                 })
-              }
+              }}
             >
               <FilePlus2 className="mr-1 h-4 w-4" />
               {t('New')}
@@ -418,9 +545,24 @@ export function Design() {
                   <Select
                     value={draft.kind}
                     disabled={!editable}
-                    onValueChange={(value) =>
-                      setDraft({ ...draft, kind: value as 'image' | 'video' })
-                    }
+                    onValueChange={(value) => {
+                      const nextKind = value as 'image' | 'video'
+                      const matching = filterCapabilitiesByKind(
+                        capabilities,
+                        nextKind
+                      )
+                      const currentMatches = matching.some(
+                        (item) => item.id === draft.capability_id
+                      )
+                      setDraft({
+                        ...draft,
+                        kind: nextKind,
+                        capability_id: currentMatches
+                          ? draft.capability_id
+                          : (matching[0]?.id ?? ''),
+                        parameters: currentMatches ? draft.parameters : {},
+                      })
+                    }}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -447,19 +589,23 @@ export function Design() {
                 <Select
                   value={draft.capability_id}
                   disabled={!editable}
-                  onValueChange={(value) =>
+                  onValueChange={(value) => {
+                    const selectedCap = capabilities.find(
+                      (item) => item.id === value
+                    )
                     setDraft({
                       ...draft,
+                      kind: selectedCap?.media_type ?? draft.kind,
                       capability_id: value ?? '',
                       parameters: {},
                     })
-                  }
+                  }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder={t('Select capability')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {capabilities.map((item) => (
+                    {filteredCapabilities.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
                         {item.plugin_name} · {item.model}
                       </SelectItem>
@@ -502,6 +648,47 @@ export function Design() {
             <CardTitle className="text-base">{t('Requirements & Parameters')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {presets.length > 0 ? (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">
+                  {t('Scene presets')}
+                </Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {presets.map((preset, index) => {
+                    const label =
+                      typeof preset.name === 'string' && preset.name
+                        ? preset.name
+                        : typeof preset.id === 'string' && preset.id
+                          ? preset.id
+                          : `Preset ${index + 1}`
+                    return (
+                      <Button
+                        key={String(preset.id ?? index)}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2.5 text-xs"
+                        disabled={!editable}
+                        onClick={() =>
+                          setDraft(
+                            applyCapabilityPreset(draft, preset, paramSchema)
+                          )
+                        }
+                      >
+                        <Sparkles className="mr-1 h-3 w-3" />
+                        {label}
+                      </Button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {deferredSchemaQuery.isLoading ? (
+              <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{t('Loading…')}</span>
+              </div>
+            ) : null}
             {paramSchema ? (
               <SchemaForm
                 schema={paramSchema}
@@ -515,17 +702,20 @@ export function Design() {
                 }
               />
             ) : null}
-            {draft.kind === 'video' && !draft.parameters['prompt'] ? (
+            {!hasSchemaPrompt && !deferredSchemaQuery.isLoading ? (
               <div className="space-y-2">
                 <Label>{t('Prompt')} *</Label>
                 <Textarea
                   rows={4}
-                  value={hasPrompt}
+                  value={promptText}
                   disabled={!editable}
                   onChange={(event) =>
                     setDraft({
                       ...draft,
-                      parameters: { ...draft.parameters, prompt: event.target.value },
+                      parameters: {
+                        ...draft.parameters,
+                        prompt: event.target.value,
+                      },
                     })
                   }
                 />
@@ -565,7 +755,7 @@ export function Design() {
   )
 
   const renderAssetsPanel = () => {
-    const steps = project?.steps ?? []
+    const steps = Array.isArray(project?.steps) ? project.steps : []
     const assetsByRole = new Map<string, DesignStepWithAssets['assets']>()
     steps.forEach((step) => {
       const assets = step.assets ?? []
@@ -608,58 +798,65 @@ export function Design() {
   }
 
   const renderWorkflowPanel = () => {
-    const steps = project?.steps ?? []
+    const steps = Array.isArray(project?.steps) ? project.steps : []
     return (
       <div className="space-y-3">
-        {steps.map((step) => (
-          <Card key={step.id}>
-            <CardContent className="space-y-2 pt-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      step.status === 'succeeded'
-                        ? 'default'
-                        : step.status === 'failed'
-                          ? 'destructive'
-                          : 'secondary'
-                    }
-                  >
-                    {STEP_STATUS_LABELS[step.status] ?? step.status}
-                  </Badge>
-                  <span className="text-sm font-medium">{step.role}</span>
-                </div>
-                {step.status === 'failed' && step.task_id === '' ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => retryMutation.mutate(step.id)}
-                  >
-                    <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                    {t('Retry')}
-                  </Button>
-                ) : null}
-              </div>
-              <div className="text-muted-foreground text-xs space-y-1">
-                <div>
-                  {t('Model')}: {step.model} · {t('Operation')}: {step.operation}
-                </div>
-                {step.task_id ? (
-                  <div className="flex items-center gap-1">
-                    <span>task: {step.task_id}</span>
-                    <CopyButton value={step.task_id} />
+        {steps.map((step) => {
+          const spec = summarizeStepSpec(step.parameters)
+          return (
+            <Card key={step.id}>
+              <CardContent className="space-y-2 pt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={
+                        step.status === 'succeeded'
+                          ? 'default'
+                          : step.status === 'failed'
+                            ? 'destructive'
+                            : 'secondary'
+                      }
+                    >
+                      {STEP_STATUS_LABELS[step.status] ?? step.status}
+                    </Badge>
+                    <span className="text-sm font-medium">{step.role}</span>
                   </div>
-                ) : null}
-                {step.status === 'failed' && step.failure_class ? (
-                  <div className="text-destructive">
-                    {FAILURE_LABELS[step.failure_class] ?? step.failure_class}
+                  {step.status === 'failed' && step.task_id === '' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => retryMutation.mutate(step.id)}
+                    >
+                      <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                      {t('Retry')}
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="text-muted-foreground text-xs space-y-1">
+                  <div>
+                    {t('Model')}: {step.model} · {t('Operation')}: {step.operation}
                   </div>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                  <div>
+                    {t('Input source')}: {spec.inputMode}
+                    {spec.summary ? ` · ${spec.summary}` : ''}
+                  </div>
+                  {step.task_id ? (
+                    <div className="flex items-center gap-1">
+                      <span>task: {step.task_id}</span>
+                      <CopyButton value={step.task_id} />
+                    </div>
+                  ) : null}
+                  {step.status === 'failed' && step.failure_class ? (
+                    <div className="text-destructive">
+                      {FAILURE_LABELS[step.failure_class] ?? step.failure_class}
+                    </div>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
         {steps.length === 0 ? (
           <Card>
             <CardContent className="text-muted-foreground py-10 text-center text-sm">
@@ -674,6 +871,9 @@ export function Design() {
   const estimate = project?.estimate
   const showConfirmSheet =
     project?.status === 'awaiting_confirmation' && estimate != null
+  const primaryStepSpec = summarizeStepSpec(
+    project?.steps[0]?.parameters ?? project?.parameters ?? ''
+  )
 
   return (
     <SectionPageLayout>
@@ -741,19 +941,29 @@ export function Design() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
                 <span>{t('Outputs')}</span>
-                <span>
+                <span className="text-right">
                   {project?.steps.map((step) => step.role).join('、') || '-'}
                 </span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
                 <span>{t('Model')}</span>
-                <span>{project?.steps[0]?.model ?? '-'}</span>
+                <span className="text-right">{project?.steps[0]?.model ?? '-'}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
+                <span>{t('Specifications')}</span>
+                <span className="text-right">
+                  {primaryStepSpec.summary || '-'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>{t('Input source')}</span>
+                <span className="text-right">{primaryStepSpec.inputMode}</span>
+              </div>
+              <div className="flex justify-between gap-4">
                 <span>{t('Estimated charge')}</span>
-                <span className="font-medium">
+                <span className="font-medium text-right">
                   {estimate ? formatQuota(estimate.quota_per_call) : '-'}
                 </span>
               </div>

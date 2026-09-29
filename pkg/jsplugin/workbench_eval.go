@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 )
 
 // Server-side evaluation of a workbench parameterSchema against a concrete
@@ -19,6 +20,78 @@ var ErrWorkbenchParamRejected = errors.New("workbench parameter rejected")
 
 func workbenchParamErrorf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrWorkbenchParamRejected, fmt.Sprintf(format, args...))
+}
+
+// ApplyWorkbenchDefaults materializes schema defaults and `x-fixed-model` /
+// `x-append` annotations into a copy of params so the frozen step in
+// PlanDesignProject displays every effective specification value on the
+// confirmation sheet (miora-creative-core §二).
+func ApplyWorkbenchDefaults(schema map[string]any, params map[string]any) map[string]any {
+	return applyWorkbenchDefaults(schema, params, 0)
+}
+
+func applyWorkbenchDefaults(schema map[string]any, params map[string]any, depth int) map[string]any {
+	out := make(map[string]any, len(params))
+	for k, v := range params {
+		out[k] = v
+	}
+	if schema == nil || depth > workbenchMaxParamDepth {
+		return out
+	}
+
+	if fixedModel, ok := schema["x-fixed-model"].(string); ok && strings.TrimSpace(fixedModel) != "" {
+		out["model"] = strings.TrimSpace(fixedModel)
+	}
+
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		for name, rawProp := range properties {
+			propObj, ok := rawProp.(map[string]any)
+			if !ok {
+				continue
+			}
+			val, present := out[name]
+			isEmptyString := false
+			if s, ok := val.(string); ok && strings.TrimSpace(s) == "" {
+				isEmptyString = true
+			}
+			if !present || val == nil || isEmptyString {
+				if def, hasDef := propObj["default"]; hasDef && def != nil {
+					out[name] = def
+					val = def
+					present = true
+				}
+			}
+			if fixed, ok := propObj["x-fixed-model"].(string); ok && strings.TrimSpace(fixed) != "" {
+				out[name] = strings.TrimSpace(fixed)
+				val = out[name]
+				present = true
+			}
+			if suffix, ok := propObj["x-append"].(string); ok && strings.TrimSpace(suffix) != "" {
+				if text, ok := val.(string); ok && strings.TrimSpace(text) != "" {
+					trimmedSuffix := strings.TrimSpace(suffix)
+					if !strings.Contains(text, trimmedSuffix) {
+						out[name] = strings.TrimSpace(text) + " " + trimmedSuffix
+					}
+				}
+			}
+			if propType, _ := propObj["type"].(string); propType == "object" && present {
+				if nested, ok := val.(map[string]any); ok {
+					out[name] = applyWorkbenchDefaults(propObj, nested, depth+1)
+				}
+			}
+		}
+	}
+
+	if suffix, ok := schema["x-append"].(string); ok && strings.TrimSpace(suffix) != "" {
+		if text, ok := out["prompt"].(string); ok && strings.TrimSpace(text) != "" {
+			trimmedSuffix := strings.TrimSpace(suffix)
+			if !strings.Contains(text, trimmedSuffix) {
+				out["prompt"] = strings.TrimSpace(text) + " " + trimmedSuffix
+			}
+		}
+	}
+
+	return out
 }
 
 // EvaluateWorkbenchParams validates params against schema. It returns a

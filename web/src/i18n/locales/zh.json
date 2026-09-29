@@ -6863,6 +6863,11 @@
     "Workflow": "工作流",
     "This capability has no configurable parameters": "该能力没有可配置参数",
     "Loading…": "加载中…",
-    "No design capability is available: the workbench switch must be on, and a workbench plugin capability must be priced with an available channel.": "当前没有可用的设计能力：需要开启工作台开关，且存在已定价、有可用渠道的 workbench 插件能力。"
+    "No design capability is available: the workbench switch must be on, and a workbench plugin capability must be priced with an available channel.": "当前没有可用的设计能力：需要开启工作台开关，且存在已定价、有可用渠道的 workbench 插件能力。",
+    "Enable AI design workbench": "启用 AI 设计工作台",
+    "Exposes the AI design workbench (/design) backed by task plugin workbench capabilities.": "向终端用户开放基于任务插件能力的 AI 设计工作台（/design）。",
+    "Scene presets": "场景预设",
+    "Specifications": "本次规格",
+    "Input source": "输入素材"
   }
 }

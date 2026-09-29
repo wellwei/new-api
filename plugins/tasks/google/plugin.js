@@ -33,6 +33,57 @@ export const meta = {
     { label: "4s × 720p", facts: { seconds: 4, resolution: "720p" } },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  workbench: {
+    schemaVersion: 1,
+    capabilities: ["veo-3.0-generate-001", "veo-3.0-fast-generate-001", "veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"].map((model) => ({
+      id: "google:" + model,
+      model: model,
+      mediaType: "video",
+      operations: ["generate"],
+      deferSchema: true,
+      referenceLimits: { maxImages: 1 },
+      parameterSchema: {
+        type: "object",
+        required: ["prompt"],
+        additionalProperties: false,
+        properties: {
+          prompt: {
+            type: "string",
+            title: "镜头与运动描述 (Prompt)",
+            minLength: 1,
+            maxLength: 2500,
+          },
+          resolution: {
+            type: "string",
+            title: "分辨率 (Resolution)",
+            enum: ["720p", "1080p", "4k"],
+            default: "720p",
+          },
+          seconds: {
+            type: "integer",
+            title: "时长（秒）",
+            enum: [4, 6, 8],
+            default: 8,
+          },
+        },
+      },
+      presets: [
+        {
+          id: "veo-standard",
+          name: "标准叙事镜头 (8s · 720p)",
+          role: "主叙事镜头",
+          parameters: { resolution: "720p", seconds: 8 },
+        },
+        {
+          id: "veo-short",
+          name: "紧凑短镜头 (4s · 720p)",
+          role: "开场锚点镜头",
+          parameters: { resolution: "720p", seconds: 4 },
+        },
+      ],
+      delivery: { canvas: "player" },
+    })),
+  },
 };
 
 function trimmed(value) {

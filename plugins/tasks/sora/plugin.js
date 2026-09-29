@@ -34,6 +34,57 @@ export const meta = {
     },
   },
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  workbench: {
+    schemaVersion: 1,
+    capabilities: ["sora-2", "sora-2-pro"].map((model) => ({
+      id: "sora:" + model,
+      model: model,
+      mediaType: "video",
+      operations: ["generate"],
+      referenceLimits: { maxImages: 1 },
+      parameterSchema: {
+        type: "object",
+        required: ["prompt"],
+        additionalProperties: false,
+        properties: {
+          prompt: {
+            type: "string",
+            title: "镜头与运动描述 (Prompt)",
+            minLength: 1,
+            maxLength: 2500,
+          },
+          size: {
+            type: "string",
+            title: "画幅尺寸 (Size)",
+            enum: ["720x1280", "1280x720", "1792x1024", "1024x1792"],
+            default: "1280x720",
+          },
+          seconds: {
+            type: "integer",
+            title: "时长（秒）",
+            minimum: 4,
+            maximum: 20,
+            default: 5,
+          },
+        },
+      },
+      presets: [
+        {
+          id: "sora-short-vertical",
+          name: "竖屏短视频 (720x1280 · 5s)",
+          role: "竖屏主镜头",
+          parameters: { size: "720x1280", seconds: 5 },
+        },
+        {
+          id: "sora-landscape",
+          name: "横屏叙事镜头 (1280x720 · 5s)",
+          role: "横屏主镜头",
+          parameters: { size: "1280x720", seconds: 5 },
+        },
+      ],
+      delivery: { canvas: "player" },
+    })),
+  },
 };
 
 function trimmed(value) {

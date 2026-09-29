@@ -334,6 +334,133 @@ export const meta = {
     { name: "openai_video", models: Object.keys(WAN_MODELS).concat(["wan2.7-t2v-2026-04-25", "wan2.7-t2v-2026-06-12", "wan2.7-i2v-2026-04-25"]) },
     { name: "openai_image", models: Object.keys(IMAGE_MODELS).concat(IMAGE_MODEL_SNAPSHOTS) },
   ],
+  workbench: {
+    schemaVersion: 1,
+    capabilities: [
+      "wan2.7-image-pro",
+      "wan2.7-image",
+      "wan2.6-t2i",
+      "qwen-image",
+      "qwen-image-plus",
+      "qwen-image-max",
+      "qwen-image-2.0-pro",
+      "qwen-image-3.0-pro",
+      "z-image-turbo",
+    ]
+      .map((model) => ({
+        id: "alibaba:" + model,
+        model: model,
+        mediaType: "image",
+        operations: ["generate"],
+        referenceLimits: { maxImages: 3 },
+        parameterSchema: {
+          type: "object",
+          required: ["prompt"],
+          additionalProperties: false,
+          properties: {
+            prompt: {
+              type: "string",
+              title: "画面描述 (Prompt)",
+              minLength: 1,
+              maxLength: 2000,
+              description: "描述主体、构图、光线、材质与商业视觉风格",
+            },
+            size: {
+              type: "string",
+              title: "画幅尺寸 (Size)",
+              enum: ["1024x1024", "1024x1536", "1536x1024"],
+              constraints: ["1024x1024", "1024x1536", "1536x1024"],
+              default: "1024x1024",
+              description: "方形 1024x1024、竖版 1024x1536、横版 1536x1024",
+            },
+            negative_prompt: {
+              type: "string",
+              title: "反向提示词",
+              maxLength: 500,
+              description: "需要避免的元素（如乱码文字、畸变、水印）",
+            },
+          },
+        },
+        presets: [
+          {
+            id: "kv-poster",
+            name: "主视觉海报 (1536x1024)",
+            role: "主视觉海报",
+            parameters: { size: "1536x1024" },
+          },
+          {
+            id: "ecommerce-detail",
+            name: "电商详情图 (1024x1536)",
+            role: "电商详情首屏",
+            parameters: { size: "1024x1536" },
+          },
+          {
+            id: "brand-logo",
+            name: "品牌 Logo 锚点 (1024x1024)",
+            role: "品牌Logo",
+            parameters: { size: "1024x1024" },
+          },
+        ],
+        delivery: { canvas: "grid" },
+      }))
+      .concat(
+        ["wan3.0-video", "wan3.0-video-prime", "wan2.7-t2v", "wan2.6-t2v"].map((model) => ({
+          id: "alibaba:" + model,
+          model: model,
+          mediaType: "video",
+          operations: ["generate"],
+          deferSchema: true,
+          referenceLimits: { maxImages: 1 },
+          parameterSchema: {
+            type: "object",
+            required: ["prompt"],
+            additionalProperties: false,
+            properties: {
+              prompt: {
+                type: "string",
+                title: "镜头与运动描述 (Prompt)",
+                minLength: 1,
+                maxLength: 2500,
+                description: "描述主体动作、镜头运动、光线氛围与结束状态",
+              },
+              resolution: {
+                type: "string",
+                title: "分辨率 (Resolution)",
+                enum: ["720P", "1080P"],
+                default: "1080P",
+              },
+              seconds: {
+                type: "integer",
+                title: "时长（秒）",
+                minimum: 2,
+                maximum: 15,
+                default: 5,
+              },
+              negative_prompt: {
+                type: "string",
+                title: "反向提示词",
+                maxLength: 500,
+              },
+            },
+          },
+          presets: [
+            {
+              id: "short-video",
+              name: "竖屏短视频 (5s · 1080P)",
+              role: "短视频主镜头",
+              parameters: { resolution: "1080P", seconds: 5 },
+            },
+            {
+              id: "landscape-showcase",
+              name: "横屏品牌展示 (5s · 1080P)",
+              role: "产品展示主镜头",
+              parameters: { resolution: "1080P", seconds: 5 },
+            },
+          ],
+          delivery: { canvas: "player" },
+        }))
+      ),
+  },
 };
 
 function trimmed(value) {

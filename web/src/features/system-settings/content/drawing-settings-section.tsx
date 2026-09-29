@@ -43,6 +43,7 @@ import { useUpdateOption } from '../hooks/use-update-option'
 
 const drawingSchema = z.object({
   DrawingEnabled: z.boolean(),
+  DesignWorkbenchEnabled: z.boolean(),
   MjNotifyEnabled: z.boolean(),
   MjAccountFilterEnabled: z.boolean(),
   MjForwardUrlEnabled: z.boolean(),
@@ -90,6 +91,13 @@ export function DrawingSettingsSection({
       label: t('Enable drawing features'),
       description: t(
         'Required to expose MjProxy-style image generation to end users.'
+      ),
+    },
+    {
+      name: 'DesignWorkbenchEnabled',
+      label: t('Enable AI design workbench'),
+      description: t(
+        'Exposes the AI design workbench (/design) backed by task plugin workbench capabilities.'
       ),
     },
     {

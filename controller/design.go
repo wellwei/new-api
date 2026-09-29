@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -227,6 +228,10 @@ func UpdateDesignProject(c *gin.Context) {
 	if req.Name != "" {
 		project.Name = strings.TrimSpace(req.Name)
 	}
+	if (req.Kind == "image" || req.Kind == "video") && req.Kind != project.Kind {
+		project.Kind = req.Kind
+		specChanged = true
+	}
 	if req.Brief != "" {
 		project.Brief = req.Brief
 		specChanged = true
@@ -321,9 +326,19 @@ func PlanDesignProject(c *gin.Context) {
 		common.ApiErrorMsg(c, "该能力未声明参数 schema，无法生成计划")
 		return
 	}
+	parameters = pluginruntime.ApplyWorkbenchDefaults(schema, parameters)
 	if err := pluginruntime.EvaluateWorkbenchParams(schema, parameters); err != nil {
 		common.ApiErrorMsg(c, "参数校验未通过："+err.Error())
 		return
+	}
+	frozenParametersJSON := ""
+	if len(parameters) > 0 {
+		encoded, marshalErr := common.Marshal(parameters)
+		if marshalErr != nil {
+			common.ApiErrorMsg(c, "参数格式错误")
+			return
+		}
+		frozenParametersJSON = string(encoded)
 	}
 
 	role := project.Role
@@ -336,6 +351,10 @@ func PlanDesignProject(c *gin.Context) {
 		return
 	}
 
+	if capability.MediaType == "image" || capability.MediaType == "video" {
+		project.Kind = capability.MediaType
+	}
+	project.Parameters = frozenParametersJSON
 	project.PlanRevision++
 	project.Status = designProjectAwaitingConfirmation
 	step := &model.DesignStep{
@@ -344,7 +363,7 @@ func PlanDesignProject(c *gin.Context) {
 		Operation:       fmt.Sprintf("%s.%s", capability.MediaType, operation),
 		CapabilityID:    capability.ID,
 		Model:           capability.Model,
-		Parameters:      project.Parameters,
+		Parameters:      frozenParametersJSON,
 		PlanRevision:    project.PlanRevision,
 		ConfirmRevision: 0,
 		Attempt:         0,
@@ -453,7 +472,7 @@ func RunDesignProject(c *gin.Context) {
 			UserID:     userID,
 			UserRole:   userRole,
 			Token:      token,
-			MediaType:  project.Kind,
+			MediaType:  designMediaTypeFromStep(step.Operation, project.Kind),
 			Operation:  designOperationFromStep(step.Operation),
 			ModelName:  step.Model,
 			Parameters: stepParametersMap(step.Parameters),
@@ -480,9 +499,6 @@ func RunDesignProject(c *gin.Context) {
 		step.Status = designStepSubmitted
 		if result.Outcome.Task.Status == model.TaskStatusSuccess {
 			step.Status = designStepSucceeded
-			// Immediate-terminal tasks never revisit the poller, so trigger
-			// artifact persistence + asset backfill right here.
-			service.PersistArtifactsForTask(c.Request.Context(), result.Outcome.Task)
 		} else if result.Outcome.Task.Status == model.TaskStatusFailure {
 			step.Status = designStepFailed
 			step.FailureClass = designFailureUpstream
@@ -490,6 +506,12 @@ func RunDesignProject(c *gin.Context) {
 		if err := model.SaveDesignStep(step); err != nil {
 			common.ApiErrorMsg(c, "保存步骤结果失败")
 			return
+		}
+		if result.Outcome.Task.Status == model.TaskStatusSuccess {
+			// Immediate-terminal tasks never revisit the poller, so trigger
+			// artifact persistence + asset backfill after the step's TaskID is
+			// durable in the DB.
+			service.PersistArtifactsForTask(c.Request.Context(), result.Outcome.Task)
 		}
 	}
 	if submitted && project.Status == designProjectReady {
@@ -502,10 +524,8 @@ func RunDesignProject(c *gin.Context) {
 
 	view := buildDesignProjectView(c, project)
 	if submitErr != nil {
-		// The run partially proceeded; return the view with the failure in
-		// the message so the UI renders both.
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
+			"success": false,
 			"message": common.MaskSensitiveInfo(submitErr.Error()),
 			"data":    view,
 		})
@@ -602,6 +622,16 @@ func designStepOperation(mediaType string, operations []string) string {
 	return ""
 }
 
+func designMediaTypeFromStep(operation, fallbackKind string) string {
+	if idx := strings.Index(operation, "."); idx > 0 {
+		media := operation[:idx]
+		if media == "image" || media == "video" {
+			return media
+		}
+	}
+	return fallbackKind
+}
+
 func designOperationFromStep(operation string) string {
 	// step.Operation is "<mediaType>.<operation>"; the bridge needs the
 	// trailing operation verb.
@@ -630,6 +660,9 @@ func designIdempotencyKey(projectID int64, planRevision int, stepID int64, attem
 // syncDesignProjectStatus recomputes the workspace status from its steps.
 // failed-without-task steps are retryable, so they keep the project runnable.
 func syncDesignProjectStatus(project *model.DesignProject) {
+	if project.Status == designProjectDraft || project.Status == designProjectAwaitingConfirmation {
+		return
+	}
 	steps, err := model.GetDesignSteps(project.ID)
 	if err != nil || len(steps) == 0 {
 		return
@@ -681,11 +714,11 @@ func buildDesignProjectView(c *gin.Context, project *model.DesignProject) design
 	assets, _ := model.GetDesignAssets(project.ID)
 	assetsByStep := make(map[int64][]designAssetView)
 	for _, asset := range assets {
-		url, err := service.BuildTaskArtifactContentURL(asset.TaskID, asset.ArtifactKey)
+		contentURL, err := buildDesignAssetURL(asset.TaskID, asset.ArtifactKey)
 		if err != nil {
 			continue
 		}
-		assetsByStep[asset.StepID] = append(assetsByStep[asset.StepID], designAssetView{DesignAsset: asset, URL: url})
+		assetsByStep[asset.StepID] = append(assetsByStep[asset.StepID], designAssetView{DesignAsset: asset, URL: contentURL})
 	}
 
 	capability, _ := resolveDesignCapability(project.DefaultCapability, sessionUserGroup(c))
@@ -721,8 +754,14 @@ func syncDesignStepsFromTasks(c *gin.Context, userID int, project *model.DesignP
 	}
 	for i := range steps {
 		step := &steps[i]
-		if step.TaskID == "" || step.Status == designStepSucceeded ||
+		if step.TaskID == "" ||
 			step.Status == designStepFailed && step.FailureClass == designFailureUpstream {
+			continue
+		}
+		if step.Status == designStepSucceeded {
+			if task, found, err := model.GetByTaskId(userID, step.TaskID); err == nil && found && task != nil {
+				service.PersistArtifactsForTask(c.Request.Context(), task)
+			}
 			continue
 		}
 		task, found, err := model.GetByTaskId(userID, step.TaskID)
@@ -733,7 +772,7 @@ func syncDesignStepsFromTasks(c *gin.Context, userID int, project *model.DesignP
 		case model.TaskStatusSuccess:
 			step.Status = designStepSucceeded
 			step.FailureClass = ""
-			service.BackfillDesignAssetsForTask(c.Request.Context(), task)
+			service.PersistArtifactsForTask(c.Request.Context(), task)
 		case model.TaskStatusFailure:
 			step.Status = designStepFailed
 			step.FailureClass = designFailureUpstream
@@ -764,4 +803,21 @@ func designTokenGroupRatio(userID, tokenID int) (float64, bool) {
 		return special, true
 	}
 	return ratio_setting.GetGroupRatio(group), true
+}
+
+func buildDesignAssetURL(taskID, artifactKey string) (string, error) {
+	if contentURL, err := service.BuildTaskArtifactContentURL(taskID, artifactKey); err == nil {
+		return contentURL, nil
+	}
+	access, err := service.IssueTaskArtifactAccess(taskID, artifactKey)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"/v1/tasks/%s/artifacts/%s/content?%s=%s",
+		url.PathEscape(taskID),
+		url.PathEscape(artifactKey),
+		service.TaskArtifactAccessQueryParameter,
+		url.QueryEscape(access),
+	), nil
 }

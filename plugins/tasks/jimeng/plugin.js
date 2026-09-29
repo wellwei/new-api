@@ -43,6 +43,47 @@ export const meta = {
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
   routes: [{ method: "POST", path: "/jimeng/", type: "dynamic", decode: "decodeRequest", render: "renderTask" }],
+  workbench: {
+    schemaVersion: 1,
+    capabilities: [
+      {
+        id: "jimeng:jimeng_vgfm_t2v_l20",
+        model: "jimeng_vgfm_t2v_l20",
+        mediaType: "video",
+        operations: ["generate"],
+        deferSchema: true,
+        referenceLimits: { maxImages: 1 },
+        parameterSchema: {
+          type: "object",
+          required: ["prompt"],
+          additionalProperties: false,
+          properties: {
+            prompt: {
+              type: "string",
+              title: "镜头与运动描述 (Prompt)",
+              minLength: 1,
+              maxLength: 1500,
+            },
+            seconds: {
+              type: "integer",
+              title: "时长（秒）",
+              enum: [5],
+              default: 5,
+            },
+          },
+        },
+        presets: [
+          {
+            id: "jimeng-short",
+            name: "即梦标准短片 (5s)",
+            role: "短视频主镜头",
+            parameters: { seconds: 5 },
+          },
+        ],
+        delivery: { canvas: "player" },
+      },
+    ],
+  },
 };
 
 function trimmed(value) {

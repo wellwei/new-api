@@ -27,6 +27,14 @@ export type DesignCapabilityPrice = {
   quota_per_call: number
 }
 
+export type DesignCapabilityPreset = {
+  id?: string
+  name?: string
+  role?: string
+  parameters?: Record<string, unknown>
+  [key: string]: unknown
+}
+
 export type DesignCapability = {
   id: string
   plugin_key: string
@@ -37,7 +45,7 @@ export type DesignCapability = {
   defer_schema: boolean
   parameter_schema?: DesignParameterSchema
   reference_limits?: Record<string, number>
-  presets?: Record<string, unknown>[]
+  presets?: DesignCapabilityPreset[]
   delivery?: Record<string, unknown>
   price?: DesignCapabilityPrice
   available: boolean
