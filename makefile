@@ -8,7 +8,7 @@ DEV_POSTGRES_DB = new-api
 DEV_POSTGRES_USER = root
 DEV_SQLITE_PATH ?= one-api.db
 
-.PHONY: all build-web build-all-web start-api dev dev-api dev-api-rebuild dev-web reset-setup test
+.PHONY: all build-web build-all-web build-headless start-api dev dev-api dev-api-rebuild dev-web reset-setup test test-headless
 
 all: build-all-web start-api
 
@@ -19,9 +19,16 @@ build-web:
 
 build-all-web: build-web
 
+build-headless:
+	@GOWORK=off go build -tags headless -o new-api .
+
+test-headless:
+	@GOWORK=off go test -tags headless ./...
+	@cd relaykit && GOWORK=off go test ./...
+
 start-api:
 	@echo "Starting api dev server..."
-	@cd $(API_DIR) && go run main.go &
+	@cd $(API_DIR) && go run . &
 
 dev-api:
 	@echo "Starting api services (docker)..."

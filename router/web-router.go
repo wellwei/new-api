@@ -17,6 +17,17 @@ import (
 type WebAssets struct {
 	BuildFS   embed.FS
 	IndexPage []byte
+	APIOnly   bool
+}
+
+func SetAPIOnlyRouter(router *gin.Engine, pluginDispatcher gin.HandlerFunc) {
+	// 未注册的路径仍先交给动态插件；只有插件也未命中才返回 API 404。
+	router.NoRoute(
+		pluginDispatcher,
+		middleware.RouteTag("api"),
+		middleware.AccessTokenAudit(),
+		controller.RelayNotFound,
+	)
 }
 
 func SetWebRouter(router *gin.Engine, assets WebAssets, pluginDispatcher gin.HandlerFunc) {

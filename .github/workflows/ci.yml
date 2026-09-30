@@ -35,33 +35,28 @@ jobs:
             go.sum
             relaykit/go.sum
 
-      - name: Create frontend embed placeholder
-        run: |
-          mkdir -p web/dist
-          touch web/dist/index.html
-
       - name: Vet root module
-        run: go vet ./...
+        run: go vet -tags headless ./...
 
       - name: Vet relaykit independently
         working-directory: relaykit
         run: go vet ./...
 
       - name: Build root module
-        run: go build ./...
+        run: go build -tags headless ./...
 
       - name: Build relaykit independently
         working-directory: relaykit
         run: go build ./...
 
       - name: Test root and relaykit modules
-        run: make test
+        run: make test-headless
 
   frontend:
     name: Frontend typecheck and test
     if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
@@ -86,3 +81,21 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Release manifest tests
+        run: bun test scripts/new-api-release.test.mjs
+
+      - name: Build embedded frontend
+        run: bun run build
+
+      - name: Set up Go for embedded compatibility
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            relaykit/go.sum
+
+      - name: Check embedded compatibility
+        working-directory: .
+        run: GOWORK=off go test ./... && GOWORK=off go build ./...

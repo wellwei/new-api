@@ -234,7 +234,7 @@ function startServer() {
       // 只需要等待前端开发服务器就绪
       console.log('Development mode: skipping server startup');
       console.log('Please make sure you have started:');
-      console.log('  1. Go backend: go run main.go (port 3000)');
+      console.log('  1. Go backend: go run . (port 3000)');
       console.log('  2. Frontend dev server: make dev-web (port 5173)');
       console.log('');
       console.log('Checking if servers are running...');

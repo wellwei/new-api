@@ -27,7 +27,7 @@ npm install
 Start the backend, the frontend, and Electron in separate terminals:
 ```bash
 # Repository root
-go run main.go
+go run .
 
 # Repository root
 make dev-web
