@@ -25,9 +25,9 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { EmptyState } from '@/components/empty-state'
 import { LoadingState } from '@/components/loading-state'
 import { SectionPageLayout } from '@/components/layout'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getApiKeys } from '@/features/keys/api'
 
 import { formatQuota } from '@/lib/format'
@@ -53,6 +53,7 @@ import { StepBar } from './components/step-bar'
 import { describeReferenceUsage, summarizeStepSpec } from './lib/spec-summary'
 import { defaultValuesFromSchema } from './schema-form'
 import {
+  capabilityDisplayName,
   missingRequiredFields,
   PROJECT_STATUS_HINT,
   PROJECT_STATUS_TEXT,
@@ -142,14 +143,29 @@ function stepForStatus(status: string | undefined): StepKey {
   return 'result'
 }
 
-export function Design() {
+export type DesignProps = {
+  /**
+   * Project the URL points at. Wins over "newest first" so a link someone was
+   * sent lands on that task instead of on whatever was created last.
+   */
+  initialProjectId?: number
+  /**
+   * Plan revision the link was minted for. The server bumps the revision on
+   * every re-plan, so a mismatch means the quote on screen is not the one the
+   * reader was sent to approve.
+   */
+  initialPlanRevision?: number
+  /** Lets the route own the URL, which is what makes a deep link survive a refresh. */
+  onProjectSelect?: (projectId: number) => void
+}
+
+export function Design(props: DesignProps = {}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [draft, setDraft] = useState<DraftState | null>(null)
   const [step, setStep] = useState<StepKey>('entry')
-  const [mobileTab, setMobileTab] = useState<'work' | 'result'>('work')
   const [errorText, setErrorText] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -198,12 +214,12 @@ export function Design() {
   const keys = Array.isArray(keysQuery.data) ? keysQuery.data : []
 
   useEffect(() => {
-    if (selectedId === null && projects.length > 0) {
-      setSelectedId(projects[0].id)
-    }
+    if (selectedId !== null || projects.length === 0) return
+    const linked = projects.find((item) => item.id === props.initialProjectId)
+    setSelectedId(linked?.id ?? projects[0].id)
     // projects is re-derived each render; the id list is the real signal here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, projectsQuery.data])
+  }, [selectedId, projectsQuery.data, props.initialProjectId])
 
   useEffect(() => {
     if (project) {
@@ -212,15 +228,6 @@ export function Design() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id, project?.status])
-
-  // The results live in their own tab on mobile, and the "Design" tab only
-  // renders steps 1-3. Without this, reaching step 4 by any path other than the
-  // confirm button — clicking the step bar, reopening a finished task, or a
-  // retry flipping status to `generating` — leaves the user staring at an empty
-  // tab. One effect, so no transition can skip it.
-  useEffect(() => {
-    setMobileTab(step === 'result' ? 'result' : 'work')
-  }, [step])
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['design'] })
@@ -352,6 +359,29 @@ export function Design() {
     steps[0]?.parameters ?? project?.parameters ?? ''
   )
 
+  /**
+   * The link a reader arrived on names the plan revision it was minted for. A
+   * re-plan bumps that revision server side, so a mismatch means the numbers on
+   * screen are newer than the ones the reader was sent to approve — worth
+   * saying out loud before anyone clicks.
+   */
+  const quoteSuperseded =
+    props.initialPlanRevision !== undefined &&
+    project !== undefined &&
+    project.plan_revision !== props.initialPlanRevision
+
+  /**
+   * A planned step carries the raw model slug, which is vendor plumbing. The
+   * quote shows the same human label the picker showed, so the two screens
+   * cannot disagree about what was chosen.
+   */
+  const previewCapability =
+    capability ??
+    capabilities.find((item) => item.id === steps[0]?.capability_id)
+  const previewModelLabel = previewCapability
+    ? capabilityDisplayName(previewCapability, capabilities)
+    : (steps[0]?.model ?? '-')
+
   const missing = draft
     ? missingRequiredFields(
         promptText.trim() !== '',
@@ -459,7 +489,7 @@ export function Design() {
             ? steps.map((item) => item.role).join('、')
             : (draft?.role ?? '-')
         }
-        model={capability?.model ?? steps[0]?.model ?? '-'}
+        model={previewModelLabel}
         specs={primarySpec.summary || '-'}
         inputMode={primarySpec.inputMode}
         referenceUsage={
@@ -602,6 +632,7 @@ export function Design() {
                   onClick={() => {
                     setSelectedId(item.id)
                     setDraft(null)
+                    props.onProjectSelect?.(item.id)
                   }}
                 >
                   {item.name}
@@ -625,82 +656,53 @@ export function Design() {
             </div>
           ) : null}
 
+          {quoteSuperseded ? (
+            <Alert>
+              <TriangleAlert />
+              <AlertDescription>
+                {t(
+                  'This task was re-planned after the link was sent, so the figures below are newer than the ones you were asked to approve.'
+                )}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           {showEntryGate ? (
             <EntryEmptyState
               onStart={startFirstProject}
               disabled={busy || keys.length === 0}
             />
           ) : (
-            <>
-              {/* Mobile: the main line and the results never share a screen. */}
-              <div className='md:hidden'>
-                <Tabs
-                  value={mobileTab}
-                  onValueChange={(value) =>
-                    setMobileTab(value as typeof mobileTab)
-                  }
-                >
-                  <TabsList className='w-full'>
-                    <TabsTrigger value='work' className='flex-1'>
-                      {t('Design')}
-                    </TabsTrigger>
-                    <TabsTrigger value='result' className='flex-1'>
-                      {t('Results')}
-                    </TabsTrigger>
-                  </TabsList>
-                  <TabsContent value='work' className='space-y-4'>
-                    {step === 'entry' ? renderEntry() : null}
-                    {step === 'brief' ? renderBrief() : null}
-                    {step === 'preview' ? renderPreview() : null}
-                    {step === 'brief' ? (
-                      <div className='flex justify-end'>
-                        <Button
-                          onClick={() => planMutation.mutate()}
-                          disabled={!canPlan}
-                        >
-                          {t('Review and generate')}
-                        </Button>
-                      </div>
-                    ) : null}
-                    {step === 'preview' ? (
-                      <Button
-                        variant='outline'
-                        onClick={() => setStep('entry')}
-                      >
-                        {t('Change type or model')}
-                      </Button>
-                    ) : null}
-                  </TabsContent>
-                  <TabsContent value='result'>{renderResult()}</TabsContent>
-                </Tabs>
-              </div>
+            /*
+              The active step owns the left column, results the right. One
+              layout for every width: below `md` the two columns simply stack,
+              which is why the page no longer carries a second, tab-shaped
+              information architecture to keep in sync.
+            */
+            <div className='grid gap-5 md:grid-cols-2'>
+              <div className='space-y-4'>
+                {step === 'entry' ? renderEntry() : null}
+                {step === 'brief' ? renderBrief() : null}
+                {step === 'preview' ? renderPreview() : null}
 
-              {/* Desktop: the active step owns the left column, results the right. */}
-              <div className='hidden gap-5 md:grid md:grid-cols-2'>
-                <div className='space-y-4'>
-                  {step === 'entry' ? renderEntry() : null}
-                  {step === 'brief' ? renderBrief() : null}
-                  {step === 'preview' ? renderPreview() : null}
-
-                  {step === 'brief' ? (
-                    <div className='flex justify-end'>
-                      <Button
-                        onClick={() => planMutation.mutate()}
-                        disabled={!canPlan}
-                      >
-                        {planMutation.isPending ? t('Preparing…') : t('Review and generate')}
-                      </Button>
-                    </div>
-                  ) : null}
-                  {step === 'preview' ? (
-                    <Button variant='outline' onClick={() => setStep('entry')}>
-                      {t('Change type or model')}
+                {step === 'brief' ? (
+                  <div className='flex justify-end'>
+                    <Button
+                      onClick={() => planMutation.mutate()}
+                      disabled={!canPlan}
+                    >
+                      {planMutation.isPending ? t('Preparing…') : t('Review and generate')}
                     </Button>
-                  ) : null}
-                </div>
-                <div>{renderResult()}</div>
+                  </div>
+                ) : null}
+                {step === 'preview' ? (
+                  <Button variant='outline' onClick={() => setStep('entry')}>
+                    {t('Change type or model')}
+                  </Button>
+                ) : null}
               </div>
-            </>
+              <div>{renderResult()}</div>
+            </div>
           )}
         </div>
 

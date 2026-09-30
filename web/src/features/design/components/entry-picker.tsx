@@ -38,7 +38,7 @@ import {
 
 import { formatQuota } from '@/lib/format'
 
-import { KIND_TEXT } from '../terminology'
+import { capabilityDisplayName, KIND_TEXT } from '../terminology'
 import type { DesignCapability } from '../types'
 
 type ApiKeyOption = { id: number; name: string }
@@ -123,8 +123,8 @@ export function EntryPicker(props: EntryPickerProps) {
           </SelectTrigger>
           <SelectContent>
             {models.map((item) => (
-              <SelectItem key={item.id} value={item.id}>
-                {item.plugin_name} · {item.model}
+              <SelectItem key={item.id} value={item.id} title={item.model}>
+                {capabilityDisplayName(item, models)}
                 {item.price ? ` · ${formatQuota(item.price.quota_per_call)}` : ''}
               </SelectItem>
             ))}

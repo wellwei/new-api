@@ -16,12 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Download, RefreshCw } from 'lucide-react'
+import {
+  Check,
+  CircleDashed,
+  Download,
+  LoaderCircle,
+  RefreshCw,
+  TriangleAlert,
+  type LucideIcon,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+} from '@/components/ai-elements/chain-of-thought'
 import { CopyButton } from '@/components/copy-button'
 import { EmptyState } from '@/components/empty-state'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -32,8 +45,6 @@ import {
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 
-import { cn } from '@/lib/utils'
-
 import { FAILURE_TEXT, STEP_STATUS_TEXT } from '../terminology'
 import type { DesignAsset, DesignStepWithAssets } from '../types'
 
@@ -41,21 +52,34 @@ function isImageAsset(asset: DesignAsset): boolean {
   return asset.mime_type.startsWith('image/') || asset.mime_type === ''
 }
 
-/** Maps a step status to the badge tone that communicates it at a glance. */
-function statusVariant(status: string): 'default' | 'destructive' | 'secondary' {
-  if (status === 'succeeded') return 'default'
-  if (status === 'failed') return 'destructive'
-  return 'secondary'
+/**
+ * Step status mapped onto the timeline's tone and icon. A failure is emphasised
+ * rather than dimmed, and never conveyed by colour alone: the icon and the
+ * status word carry it too.
+ */
+const STEP_TIMELINE: Record<
+  string,
+  { icon: LucideIcon; tone: 'complete' | 'active' | 'pending' }
+> = {
+  pending: { icon: CircleDashed, tone: 'pending' },
+  submitted: { icon: LoaderCircle, tone: 'active' },
+  succeeded: { icon: Check, tone: 'complete' },
+  failed: { icon: TriangleAlert, tone: 'active' },
 }
 
-function AssetItem(props: { asset: DesignAsset; index: number }) {
+const UNKNOWN_STEP_TIMELINE = { icon: CircleDashed, tone: 'pending' as const }
+
+function AssetItem(props: { asset: DesignAsset; role: string; index: number }) {
   const { t } = useTranslation()
   return (
     <div className='group relative overflow-hidden rounded-md border'>
       {isImageAsset(props.asset) ? (
         <img
           src={props.asset.url ?? ''}
-          alt={`result-${props.index + 1}`}
+          alt={t('{role}, result {index}', {
+            role: props.role,
+            index: props.index + 1,
+          })}
           className='w-full'
           loading='lazy'
         />
@@ -95,11 +119,22 @@ export function AssetBoard(props: {
   const { t } = useTranslation()
 
   const grouped = props.steps.reduce<Map<string, DesignAsset[]>>((acc, step) => {
-    const assets = step.assets ?? []
-    if (assets.length === 0) return acc
-    acc.set(step.role, [...(acc.get(step.role) ?? []), ...assets])
+    for (const asset of step.assets ?? []) {
+      // An asset carries its own semantic role, and one step can yield several:
+      // "what this step was for" is not the same question as "what this image is
+      // for". The step role is the fallback for rows whose asset role was never
+      // filled in.
+      const role =
+        asset.semantic_role.trim() === '' ? step.role : asset.semantic_role
+      acc.set(role, [...(acc.get(role) ?? []), asset])
+    }
     return acc
   }, new Map())
+  // Candidates of one role read as a sequence, so keep the order the plugin
+  // numbered them in rather than the order the poller happened to persist.
+  for (const assets of grouped.values()) {
+    assets.sort((left, right) => left.candidate_index - right.candidate_index)
+  }
 
   if (grouped.size === 0) {
     return (
@@ -131,7 +166,12 @@ export function AssetBoard(props: {
           <CardContent>
             <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3'>
               {assets.map((asset, index) => (
-                <AssetItem key={asset.id} asset={asset} index={index} />
+                <AssetItem
+                  key={asset.id}
+                  asset={asset}
+                  role={role}
+                  index={index}
+                />
               ))}
             </div>
           </CardContent>
@@ -212,7 +252,11 @@ export function RunStatus(props: {
   return (
     <div className='space-y-3'>
       <div className='space-y-2'>
-        <div className='text-muted-foreground flex items-center justify-between text-sm'>
+        {/* Announced, because the bar alone is colour and width. */}
+        <div
+          className='text-muted-foreground flex items-center justify-between text-sm'
+          aria-live='polite'
+        >
           <span>
             {t('{done} of {total} done', { done, total: props.steps.length })}
           </span>
@@ -225,20 +269,33 @@ export function RunStatus(props: {
         <Progress value={percent} />
       </div>
 
-      {props.steps.map((step) => {
-        const failure = step.failure_class
-          ? FAILURE_TEXT[step.failure_class]
-          : undefined
-        return (
-          <Card key={step.id}>
-            <CardContent className='space-y-2 pt-4'>
-              <div className='flex items-center justify-between gap-2'>
-                <div className='flex min-w-0 items-center gap-2'>
-                  <Badge variant={statusVariant(step.status)}>
-                    {t(STEP_STATUS_TEXT[step.status] ?? step.status)}
-                  </Badge>
-                  <span className='truncate text-sm font-medium'>{step.role}</span>
-                </div>
+      <ChainOfThought defaultOpen className='max-w-none'>
+        <ChainOfThoughtHeader>{t('Run log')}</ChainOfThoughtHeader>
+        <ChainOfThoughtContent>
+          {props.steps.map((step) => {
+            const timeline = STEP_TIMELINE[step.status] ?? UNKNOWN_STEP_TIMELINE
+            const failure = step.failure_class
+              ? FAILURE_TEXT[step.failure_class]
+              : undefined
+            return (
+              <ChainOfThoughtStep
+                key={step.id}
+                icon={timeline.icon}
+                status={timeline.tone}
+                label={`${step.role} · ${t(STEP_STATUS_TEXT[step.status] ?? step.status)}`}
+                description={props.specSummary(step)}
+              >
+                {failure ? (
+                  <div className='text-destructive space-y-0.5 text-xs'>
+                    <div>{t(failure.reason)}</div>
+                    <div>{t(failure.action)}</div>
+                  </div>
+                ) : null}
+                {/*
+                  A step that already produced a task is only ever queried, never
+                  resubmitted, so no retry appears for one — the backend refuses
+                  it too, and a button that cannot work is worse than no button.
+                */}
                 {step.status === 'failed' && step.task_id === '' ? (
                   <Button
                     variant='outline'
@@ -250,30 +307,18 @@ export function RunStatus(props: {
                     {t('Retry')}
                   </Button>
                 ) : null}
-              </div>
-
-              <div className='text-muted-foreground space-y-1 text-xs'>
-                <div className={cn('truncate')}>{props.specSummary(step)}</div>
-                {failure ? (
-                  <div className='text-destructive space-y-0.5'>
-                    <div>{t(failure.reason)}</div>
-                    <div>{t(failure.action)}</div>
-                  </div>
-                ) : null}
                 {step.task_id ? (
-                  <div className='flex items-center gap-1'>
-                    <span className='text-muted-foreground'>
-                      {t('Task ID')}:
-                    </span>
+                  <div className='text-muted-foreground flex items-center gap-1 text-xs'>
+                    <span>{t('Task ID')}:</span>
                     <span className='font-mono'>{step.task_id}</span>
                     <CopyButton value={step.task_id} />
                   </div>
                 ) : null}
-              </div>
-            </CardContent>
-          </Card>
-        )
-      })}
+              </ChainOfThoughtStep>
+            )
+          })}
+        </ChainOfThoughtContent>
+      </ChainOfThought>
     </div>
   )
 }

@@ -23,6 +23,8 @@ For commercial licensing, please contact support@quantumnous.com
 // that translates those terms into language a first-time user can act on, so
 // the page never has to render a raw field name.
 
+import type { DesignCapability } from './types'
+
 /**
  * Capability parameter keys whose values are opaque upstream tokens
  * (`1024x1024`, `2K`, `21:9`) and must never reach the user verbatim.
@@ -217,6 +219,84 @@ export const FAILURE_TEXT: Record<string, { reason: string; action: string }> = 
 export const KIND_TEXT: Record<'image' | 'video', { label: string; hint: string }> = {
   image: { label: '图片', hint: '生成海报、插画、封面等静态图片' },
   video: { label: '视频', hint: '生成短片、动态素材等视频' },
+}
+
+/**
+ * Model-slug tokens that are release plumbing rather than a difference a user
+ * can act on. `-wb` marks an internal WorkBuddy build; the rest are rollout
+ * stages. Dropping them is what keeps the label readable.
+ */
+const INTERNAL_MODEL_TOKENS = new Set([
+  'wb',
+  'beta',
+  'preview',
+  'exp',
+  'snapshot',
+  'internal',
+  'latest',
+])
+
+/** A bare build stamp such as `250528` carries no meaning at the point of choice. */
+function isBuildStamp(token: string): boolean {
+  return /^\d{6,8}$/.test(token)
+}
+
+/**
+ * Turns `1` `0` back into `1.0` so a version reads as a version instead of as
+ * two unrelated numbers once the separators are gone.
+ */
+function joinVersionRuns(tokens: string[]): string[] {
+  const joined: string[] = []
+  for (const token of tokens) {
+    const previous = joined.at(-1)
+    if (previous !== undefined && /^\d+$/.test(previous) && /^\d+$/.test(token)) {
+      joined[joined.length - 1] = `${previous}.${token}`
+      continue
+    }
+    joined.push(token)
+  }
+  return joined
+}
+
+/**
+ * Readable form of a model slug: separators become spaces, internal markers and
+ * build stamps are dropped, and the result is sentence-cased. Every token is
+ * kept when dropping them all would leave nothing, so a label is never empty.
+ */
+export function readableModelName(model: string): string {
+  const tokens = model.split(/[-_.\s]+/).filter(Boolean)
+  const kept = tokens.filter(
+    (token) => !INTERNAL_MODEL_TOKENS.has(token.toLowerCase()) && !isBuildStamp(token)
+  )
+  const source = kept.length > 0 ? kept : tokens
+  const text = joinVersionRuns(source).join(' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/**
+ * Label for a capability in a picker or a quote. The vendor name carries the
+ * choice; the raw slug (`hy-image-3.5-wb`) is plumbing a first-time user cannot
+ * act on, so it is not the label. It is appended only when the same vendor
+ * offers several capabilities of the same kind, because then the options would
+ * otherwise be indistinguishable. Callers keep the raw slug available through
+ * `title` for troubleshooting.
+ *
+ * `peers` is the list actually being rendered, so the caller passes the
+ * already-filtered options rather than every capability.
+ */
+export function capabilityDisplayName(
+  capability: DesignCapability,
+  peers: DesignCapability[] = []
+): string {
+  const vendor = capability.plugin_name.trim()
+  const base = vendor === '' ? readableModelName(capability.model) : vendor
+  const ambiguous = peers.some(
+    (peer) =>
+      peer.id !== capability.id &&
+      peer.plugin_name === capability.plugin_name &&
+      peer.media_type === capability.media_type
+  )
+  return ambiguous ? `${base} · ${readableModelName(capability.model)}` : base
 }
 
 /**
