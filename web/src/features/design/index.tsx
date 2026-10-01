@@ -271,7 +271,11 @@ export function Design(props: DesignProps = {}) {
   const confirmMutation = useMutation({
     mutationFn: () => {
       if (!selectedId) throw new Error(t('No task selected'))
-      return confirmDesignProject(selectedId)
+      // Approve the revision this link names, not the project's current one.
+      // Sending the current revision would make the server check pointless:
+      // a re-plan between reading the quote and clicking would then be
+      // confirmed at the new price the user never saw.
+      return confirmDesignProject(selectedId, props.initialPlanRevision)
     },
     onSuccess: (confirmed) => {
       // Confirmation alone must not spend money. The design doc (§4.3) treats

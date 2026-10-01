@@ -321,11 +321,18 @@ func SetApiRouter(router *gin.Engine) {
 			designRoute.POST("/projects", middleware.SessionCookieOriginGuard(), controller.CreateDesignProject)
 			designRoute.GET("/projects/:id", controller.GetDesignProject)
 			designRoute.PATCH("/projects/:id", middleware.SessionCookieOriginGuard(), controller.UpdateDesignProject)
-			designRoute.DELETE("/projects/:id", middleware.SessionCookieOriginGuard(), controller.DeleteDesignProject)
+			// Confirm releases the billing gate and delete is unrecoverable:
+			// both are human decisions, so a PAT must never be able to make
+			// them. Every other design route stays PAT-callable on purpose.
+			designRoute.DELETE("/projects/:id", middleware.SessionCookieOriginGuard(), middleware.RequireDashboardSession(), controller.DeleteDesignProject)
 			designRoute.POST("/projects/:id/plan", middleware.SessionCookieOriginGuard(), controller.PlanDesignProject)
-			designRoute.POST("/projects/:id/confirm", middleware.SessionCookieOriginGuard(), controller.ConfirmDesignProject)
+			designRoute.POST("/projects/:id/confirm", middleware.SessionCookieOriginGuard(), middleware.RequireDashboardSession(), controller.ConfirmDesignProject)
 			designRoute.POST("/projects/:id/run", middleware.SessionCookieOriginGuard(), controller.RunDesignProject)
 			designRoute.POST("/projects/:id/steps/:step_id/retry", middleware.SessionCookieOriginGuard(), controller.RetryDesignStep)
+			designRoute.PATCH("/projects/:id/assets/:asset_id", middleware.SessionCookieOriginGuard(), middleware.RequireDashboardSession(), controller.UpdateDesignAsset)
+			designRoute.POST("/projects/:id/assets", middleware.SessionCookieOriginGuard(), controller.RegisterDesignExternalAsset)
+			designRoute.GET("/projects/:id/assets", controller.GetDesignExternalAssets)
+			designRoute.GET("/projects/:id/external-assets/:object_key/content", controller.GetDesignExternalAssetContent)
 		}
 
 		apiRouter.GET("/audit", middleware.DisableCache(), middleware.AdminAuth(), middleware.RequirePermission(authz.AuditRead), controller.GetAuditLogs)

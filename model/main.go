@@ -373,6 +373,7 @@ func migrateDB() error {
 		&DesignStep{},
 		&DesignAsset{},
 		&TaskArtifactObject{},
+		&DesignExternalObject{},
 		&AuthzRole{},
 	)
 	if err != nil {

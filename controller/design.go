@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -163,11 +164,19 @@ func CreateDesignProject(c *gin.Context) {
 		DefaultCapability: strings.TrimSpace(req.Capability),
 		TokenID:           req.TokenID,
 		Parameters:        parameters,
+		// Stamped from the credential, never from the request body: the
+		// origin has to be something the server observed, or it is worthless
+		// for telling an agent-initiated workspace apart in triage.
+		CreatedVia: model.DesignCreatedViaWeb,
+	}
+	if c.GetBool("use_access_token") {
+		project.CreatedVia = model.DesignCreatedViaAgent
 	}
 	if err := model.InsertDesignProject(project); err != nil {
 		common.ApiErrorMsg(c, "创建项目失败")
 		return
 	}
+	project.CreatedVia = project.CreatedViaOrDefault()
 	common.ApiSuccess(c, project)
 }
 
@@ -183,6 +192,9 @@ func ListDesignProjects(c *gin.Context) {
 	if err != nil {
 		common.ApiErrorMsg(c, "查询项目失败")
 		return
+	}
+	for i := range projects {
+		projects[i].CreatedVia = projects[i].CreatedViaOrDefault()
 	}
 	common.ApiSuccess(c, gin.H{"items": projects, "total": total, "page": page, "size": size})
 }
@@ -384,9 +396,26 @@ func PlanDesignProject(c *gin.Context) {
 }
 
 // ConfirmDesignProject records the user's approval of the current plan batch.
+// The optional plan_revision binds the approval to the quote the user actually
+// read: a deep link into a project whose plan was reissued since still reaches
+// this handler, and a blind confirm would authorize the new price the user
+// never saw. Omitting it keeps the pre-existing behavior for callers that do
+// not track revisions.
 func ConfirmDesignProject(c *gin.Context) {
 	project, ok := loadOwnDesignProject(c)
 	if !ok {
+		return
+	}
+	var req struct {
+		PlanRevision *int `json:"plan_revision"`
+	}
+	// An empty body is the "no revision supplied" case, not a malformed request.
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		common.ApiErrorMsg(c, "请求格式错误")
+		return
+	}
+	if req.PlanRevision != nil && *req.PlanRevision != project.PlanRevision {
+		common.ApiErrorMsg(c, "报价已更新，请重新查看并确认")
 		return
 	}
 	if project.Status != designProjectAwaitingConfirmation {
@@ -566,6 +595,51 @@ func RetryDesignStep(c *gin.Context) {
 	common.ApiSuccess(c, buildDesignProjectView(c, project))
 }
 
+// UpdateDesignAsset records a per-asset decision: `accepted` marks a candidate
+// as passing review, `selected` marks it as the one chosen candidate of its
+// semantic role. They are independent — approving a render does not make it
+// the deliverable — and the mutual exclusion of `selected` inside
+// (project_id, semantic_role) is enforced in the model layer, not here, so it
+// holds no matter which client issues the decision.
+func UpdateDesignAsset(c *gin.Context) {
+	project, ok := loadOwnDesignProject(c)
+	if !ok {
+		return
+	}
+	assetID, err := strconv.ParseInt(c.Param("asset_id"), 10, 64)
+	if err != nil || assetID <= 0 {
+		common.ApiErrorMsg(c, "asset not found")
+		return
+	}
+	var req struct {
+		Accepted *bool `json:"accepted"`
+		Selected *bool `json:"selected"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "请求格式错误")
+		return
+	}
+	if req.Accepted == nil && req.Selected == nil {
+		common.ApiErrorMsg(c, "请至少指定 accepted 或 selected")
+		return
+	}
+	// Step 1 above already proved the project belongs to the session user;
+	// step 2 binds the asset to that project, so an asset of another project
+	// is indistinguishable from one that does not exist.
+	if _, err := model.GetDesignAssetByID(project.ID, assetID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "asset not found"})
+		return
+	}
+	if err := model.UpdateDesignAssetFlags(project.ID, assetID, model.DesignAssetUpdate{
+		Accepted: req.Accepted,
+		Selected: req.Selected,
+	}); err != nil {
+		common.ApiErrorMsg(c, "更新资产失败")
+		return
+	}
+	common.ApiSuccess(c, buildDesignProjectView(c, project))
+}
+
 // --- Shared helpers ---------------------------------------------------------
 
 func loadOwnDesignProject(c *gin.Context) (*model.DesignProject, bool) {
@@ -708,6 +782,7 @@ func syncDesignProjectStatus(project *model.DesignProject) {
 // sheet's price estimate.
 func buildDesignProjectView(c *gin.Context, project *model.DesignProject) designProjectView {
 	userID := c.GetInt("id")
+	project.CreatedVia = project.CreatedViaOrDefault()
 	syncDesignStepsFromTasks(c, userID, project)
 
 	steps, _ := model.GetDesignSteps(project.ID)

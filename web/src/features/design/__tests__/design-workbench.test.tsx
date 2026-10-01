@@ -19,12 +19,15 @@ For commercial licensing, please contact support@quantumnous.com
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { api } from '@/lib/api'
+
 import {
   applyCapabilityPreset,
   type DraftState,
   filterCapabilitiesByKind,
   summarizeStepSpec,Design
 } from '../index'
+import { confirmDesignProject } from '../api'
 import { AssetBoard, RunStatus } from '../components/asset-board'
 import { defaultValuesFromSchema, SchemaForm } from '../schema-form'
 import {
@@ -877,5 +880,29 @@ describe('deep link entry', () => {
     expect(
       screen.getByText(/re-planned after the link was sent/)
     ).toBeDefined()
+  })
+
+  it('confirms the revision the link names, never the project current one', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { success: true, data: linkedProject } })
+    const postSpy = vi.spyOn(api, 'post').mockImplementation(post as never)
+    try {
+      // linkedProject is at revision 3 while the link names 2. The body must
+      // carry 2, so the server can refuse a quote the user never read.
+      await confirmDesignProject(9, 2)
+      expect(postSpy).toHaveBeenCalledWith('/api/design/projects/9/confirm', {
+        plan_revision: 2,
+      })
+
+      // Omitting the revision keeps the pre-existing unconditional call, so
+      // an older caller cannot be broken by the field becoming mandatory.
+      // `undefined` is dropped by JSON.stringify, and vitest's argument
+      // matching treats such a key as absent, so the wire body is `{}` either
+      // way — the server reads that as "no revision supplied".
+      postSpy.mockClear()
+      await confirmDesignProject(9)
+      expect(postSpy).toHaveBeenCalledWith('/api/design/projects/9/confirm', {})
+    } finally {
+      postSpy.mockRestore()
+    }
   })
 })

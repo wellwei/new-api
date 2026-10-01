@@ -96,10 +96,19 @@ export async function planDesignProject(
   return requireServerSuccess(res.data).data
 }
 
+/**
+ * Approve the quote. `planRevision` is the revision the user actually read,
+ * which is the URL's rev on a deep link — never the project's current one, or
+ * the server would approve a price the user never saw. Omitting it keeps the
+ * server's pre-existing unconditional behavior.
+ */
 export async function confirmDesignProject(
-  id: number
+  id: number,
+  planRevision?: number
 ): Promise<DesignProjectView> {
-  const res = await api.post(`/api/design/projects/${id}/confirm`, {})
+  const res = await api.post(`/api/design/projects/${id}/confirm`, {
+    plan_revision: planRevision,
+  })
   return requireServerSuccess(res.data).data
 }
 

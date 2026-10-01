@@ -13,8 +13,10 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -91,6 +93,8 @@ func setupDesignControllerTestEnv(t *testing.T) (int, int) {
 		&model.DesignProject{},
 		&model.DesignStep{},
 		&model.DesignAsset{},
+		&model.DesignExternalObject{},
+		&model.UserSession{},
 	))
 
 	_, err = pluginruntime.DefaultRegistry.Register(designControllerTestPlugin, pluginruntime.Options{})
@@ -105,6 +109,16 @@ func setupDesignControllerTestEnv(t *testing.T) (int, int) {
 		_ = ratio_setting.UpdateModelPriceByJSONString(`{}`)
 		model.InvalidatePricingCache()
 	})
+
+	// Deliverable registration needs a real volume. Without one the route
+	// answers "storage disabled" before the MIME gate ever runs, which lets a
+	// type rejection pass for the wrong reason.
+	t.Cleanup(service.RegisterExternalArtifactStore(service.NewFilesystemArtifactStore(
+		system_setting.TaskArtifactStoreConfig{
+			Mode:                     system_setting.TaskArtifactStoreModeFilesystem,
+			FilesystemPath:           t.TempDir(),
+			FilesystemMaxObjectBytes: 4 << 20,
+		})))
 
 	user := &model.User{
 		Username: "designer",
@@ -245,13 +259,13 @@ func TestDesignRetryDisciplineAndSucceededStepAssetBackfill(t *testing.T) {
 	}
 	require.NoError(t, model.DB.Create(taskRow).Error)
 	artifactRow := &model.TaskArtifactObject{
-		TaskID:      "task_sync_image_1",
-		ArtifactKey: "image-0",
+		TaskID:       "task_sync_image_1",
+		ArtifactKey:  "image-0",
 		RelativePath: "2026/09/29/task_sync_image_1/image-0.png",
-		MimeType:    "image/png",
-		Size:        4096,
-		Width:       1024,
-		Height:      1024,
+		MimeType:     "image/png",
+		Size:         4096,
+		Width:        1024,
+		Height:       1024,
 	}
 	require.NoError(t, model.DB.Create(artifactRow).Error)
 

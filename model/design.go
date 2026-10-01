@@ -26,6 +26,16 @@ type DesignProject struct {
 	Kind   string `json:"kind" gorm:"type:varchar(32);index"`
 	Status string `json:"status" gorm:"type:varchar(40);index"`
 
+	// CreatedVia records which surface opened the workspace: "web" for a
+	// dashboard session, "agent" for a PAT-authenticated call. The server
+	// stamps it from the credential kind and never from the request body, so
+	// an agent cannot claim it came from the page. No GORM default tag: an
+	// empty value is a business rule (legacy rows predate the column) that
+	// the read side resolves to "web", and a tag would make AutoMigrate
+	// re-issue ALTER TABLE on MySQL/PostgreSQL restarts. No index — two
+	// values.
+	CreatedVia string `json:"created_via" gorm:"type:varchar(16)"`
+
 	// PlanRevision increments whenever the confirmed plan changes; steps and
 	// assets carry the revision they belong to so a stale confirm is rejected.
 	PlanRevision int `json:"plan_revision" gorm:"default:0"`
@@ -52,6 +62,23 @@ type DesignProject struct {
 }
 
 func (DesignProject) TableName() string { return "design_projects" }
+
+// Workspace origins. See DesignProject.CreatedVia for why the value is
+// server-stamped and why the empty string resolves to "web".
+const (
+	DesignCreatedViaWeb   = "web"
+	DesignCreatedViaAgent = "agent"
+)
+
+// CreatedViaOrDefault resolves the origin for display, mapping rows written
+// before the column existed to "web". The PAT path is new, so an empty value
+// can only be legacy data.
+func (project *DesignProject) CreatedViaOrDefault() string {
+	if project.CreatedVia == "" {
+		return DesignCreatedViaWeb
+	}
+	return project.CreatedVia
+}
 
 // DesignStep is one semantic generation step inside a project. One step maps
 // to exactly one task (one semantic role → one task); multiple returned images
@@ -153,6 +180,46 @@ type TaskArtifactObject struct {
 
 func (TaskArtifactObject) TableName() string { return "task_artifact_objects" }
 
+// DesignExternalObject is the ledger for a deliverable the workbench did not
+// generate: a reference image the user supplied, or an editable file (drawio /
+// docx / pptx / pdf) an agent produced outside the task system.
+//
+// It is deliberately a separate table rather than a task_id-less row in
+// task_artifact_objects. That table's primary key is (task_id, artifact_key)
+// and its storage path embeds the task id, so a nameless row would collide
+// with every other nameless row on the same artifact key — and the artifact
+// content route authorizes on the task, which an external object does not
+// have. Referencing the owning project instead keeps every read scoped to a
+// workspace the session user already owns.
+type DesignExternalObject struct {
+	ID        int64 `json:"id" gorm:"primary_key"`
+	CreatedAt int64 `json:"created_at" gorm:"bigint;index"`
+	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
+
+	UserID    int   `json:"user_id" gorm:"index"`
+	ProjectID int64 `json:"project_id" gorm:"index"`
+
+	// ObjectKey is server-generated and unique: it is the storage name and the
+	// HMAC signing input, so a client-supplied name can never collide with or
+	// overwrite another object's bytes.
+	ObjectKey    string `json:"object_key" gorm:"type:varchar(128);uniqueIndex"`
+	SemanticRole string `json:"semantic_role" gorm:"type:varchar(128);index"`
+	// Source records where the bytes came from ("upload" or "url") so triage
+	// can tell a pasted link from a dropped file.
+	Source   string `json:"source" gorm:"type:varchar(16)"`
+	FileName string `json:"file_name" gorm:"type:varchar(191)"`
+
+	Backend      string `json:"backend" gorm:"type:varchar(32)"`
+	RelativePath string `json:"relative_path" gorm:"type:varchar(512)"`
+	MimeType     string `json:"mime_type" gorm:"type:varchar(128)"`
+	Size         int64  `json:"size"`
+	SHA256       string `json:"sha256" gorm:"type:varchar(64)"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+}
+
+func (DesignExternalObject) TableName() string { return "design_external_objects" }
+
 // --- Queries used by the design workbench API (controller/design.go) and the
 // --- asset backfill hook (service). Ownership is always part of the WHERE so
 // --- one user can never read or mutate another user's workspace.
@@ -249,6 +316,58 @@ func GetDesignAssetByID(projectID, assetID int64) (*DesignAsset, error) {
 	return &asset, nil
 }
 
+// DesignAssetUpdate is the partial, field-present form of an asset decision.
+// A nil field is left untouched, which is what lets the UI send only the one
+// decision it changed and keeps "uncheck selection" expressible.
+type DesignAssetUpdate struct {
+	Accepted *bool
+	Selected *bool
+}
+
+// UpdateDesignAssetFlags applies an acceptance / finalization decision.
+//
+// Selection is mutually exclusive per (project_id, semantic_role): one
+// semantic role resolves to exactly one chosen candidate, so the clear and the
+// set must land in one transaction under a row lock, or two concurrent
+// decisions would both survive with Selected true. Acceptance is not
+// exclusive — several candidates can be accepted — and neither flag implies
+// the other: "approved" is not "this is the one we ship".
+//
+// The target asset is re-read under the lock with project_id in the WHERE, so
+// a foreign asset_id is reported as not found rather than mutated. Ownership
+// of the project itself is the caller's check (loadOwnDesignProject), which
+// already scoped the project id to the session user.
+func UpdateDesignAssetFlags(projectID, assetID int64, update DesignAssetUpdate) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var asset DesignAsset
+		if err := lockForUpdate(tx).
+			Where("id = ? and project_id = ?", assetID, projectID).
+			First(&asset).Error; err != nil {
+			return err
+		}
+		now := time.Now().Unix()
+		if update.Selected != nil {
+			if *update.Selected {
+				if err := tx.Model(&DesignAsset{}).
+					Where("project_id = ? and semantic_role = ? and id != ? and selected = ?", projectID, asset.SemanticRole, asset.ID, true).
+					Update("selected", false).Error; err != nil {
+					return err
+				}
+			}
+			asset.Selected = *update.Selected
+		}
+		if update.Accepted != nil {
+			asset.Accepted = *update.Accepted
+		}
+		asset.UpdatedAt = now
+		return tx.Model(&DesignAsset{}).Where("id = ?", asset.ID).Updates(map[string]any{
+			"selected":   asset.Selected,
+			"accepted":   asset.Accepted,
+			"updated_at": now,
+		}).Error
+	})
+}
+
 // DesignStepByIdempotencyKey resolves a previously submitted step for an
 // idempotent re-run. Ownership is enforced through the project's user id.
 func DesignStepByIdempotencyKey(userID int, idempotencyKey string) (*DesignStep, error) {
@@ -333,4 +452,42 @@ func GetPersistedTaskArtifactObjects(taskID string) ([]TaskArtifactObject, error
 	err := DB.Where("task_id = ? and pending = ?", taskID, false).
 		Order("id asc").Find(&objects).Error
 	return objects, err
+}
+
+// --- External design objects: owned by a project, not by a task. ---
+
+// InsertDesignExternalObject stamps the creation time and writes the ledger
+// row. The caller has already persisted the bytes; a ledger row without bytes
+// is never produced because the write happens after the object is published.
+func InsertDesignExternalObject(object *DesignExternalObject) error {
+	now := time.Now().Unix()
+	object.CreatedAt = now
+	object.UpdatedAt = now
+	return DB.Create(object).Error
+}
+
+// ListDesignExternalObjects returns one project's registered deliverables,
+// oldest first.
+func ListDesignExternalObjects(projectID int64) ([]DesignExternalObject, error) {
+	if projectID <= 0 {
+		return nil, errors.New("invalid design project lookup")
+	}
+	var objects []DesignExternalObject
+	err := DB.Where("project_id = ?", projectID).Order("id asc").Find(&objects).Error
+	return objects, err
+}
+
+// DesignExternalObjectByKey resolves a registered object inside one project.
+// The project id is part of the lookup so a key from another workspace reads
+// as missing instead of leaking.
+func DesignExternalObjectByKey(projectID int64, objectKey string) (*DesignExternalObject, error) {
+	if projectID <= 0 || objectKey == "" {
+		return nil, errors.New("invalid design external object lookup")
+	}
+	var object DesignExternalObject
+	err := DB.Where("project_id = ? and object_key = ?", projectID, objectKey).First(&object).Error
+	if err != nil {
+		return nil, err
+	}
+	return &object, nil
 }

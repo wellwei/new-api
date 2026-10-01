@@ -59,6 +59,7 @@ func init() {
 	}
 	// upstream and (reserved) s3 keep the disabled store, which falls back to
 	// live upstream proxying on Serve.
+	RegisterExternalArtifactStore(taskArtifactStore)
 }
 
 // GetTaskArtifactStore returns the process-wide artifact storage backend. It
