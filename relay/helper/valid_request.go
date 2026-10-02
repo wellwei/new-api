@@ -41,6 +41,8 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 		request, err = GetAndValidateResponsesCompactionRequest(c)
 	case types.RelayFormatOpenAIAlphaSearch:
 		request, err = GetAndValidateAlphaSearchRequest(c)
+	case types.RelayFormatSystemOne:
+		request, err = GetAndValidateSystemOneRequest(c)
 
 	case types.RelayFormatOpenAIImage:
 		request, err = GetAndValidOpenAIImageRequest(c, relayMode)
@@ -157,6 +159,39 @@ func GetAndValidateAlphaSearchRequest(c *gin.Context) (*dto.AlphaSearchRequest, 
 	}
 	if request.Model == "" {
 		return nil, errors.New("model is required")
+	}
+	storage, err := common.GetBodyStorage(c)
+	if err != nil {
+		return nil, err
+	}
+	rawBody, err := storage.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	request.RawBody = rawBody
+	return request, nil
+}
+
+func GetAndValidateSystemOneRequest(c *gin.Context) (*dto.SystemOneRequest, error) {
+	request := &dto.SystemOneRequest{}
+	if err := common.UnmarshalBodyReusable(c, request); err != nil {
+		return nil, err
+	}
+	if request.Model == "" {
+		return nil, errors.New("model is required")
+	}
+	if len(request.State) == 0 {
+		return nil, errors.New("state is required")
+	}
+	if len(request.Questions) == 0 {
+		return nil, errors.New("questions is required")
+	}
+	for name, question := range request.Questions {
+		switch question.Type {
+		case "choice", "score", "noul":
+		default:
+			return nil, fmt.Errorf("question %q has unsupported type %q, must be one of: choice, score, noul", name, question.Type)
+		}
 	}
 	storage, err := common.GetBodyStorage(c)
 	if err != nil {

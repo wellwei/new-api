@@ -130,6 +130,14 @@ func SetRelayRouter(router *gin.Engine) {
 			controller.Relay(c, types.RelayFormatOpenAIAlphaSearch)
 		})
 
+		// system one related routes (System One decision models, e.g. Jev).
+		// Not a chat surface: the body is state + typed questions and the reply
+		// is probabilities, so it gets its own format rather than being folded
+		// into one of the OpenAI protocols.
+		httpRouter.POST("/systemone", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatSystemOne)
+		})
+
 		// image related routes. /images/generations and /images/edits are
 		// host protocol endpoints (openai_image) registered by
 		// SetTaskPluginProtocolRouter; unclaimed models fall back to Relay.

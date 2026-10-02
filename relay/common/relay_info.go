@@ -711,6 +711,11 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 			return GenRelayInfoAlphaSearch(c, request), nil
 		}
 		return nil, errors.New("request is not a AlphaSearchRequest")
+	case types.RelayFormatSystemOne:
+		if request, ok := request.(*dto.SystemOneRequest); ok {
+			return GenRelayInfoSystemOne(c, request), nil
+		}
+		return nil, errors.New("request is not a SystemOneRequest")
 	case types.RelayFormatTask:
 		info = genBaseRelayInfo(c, nil)
 		info.TaskRelayInfo = &TaskRelayInfo{}
@@ -799,6 +804,18 @@ func GenRelayInfoAlphaSearch(c *gin.Context, request *dto.AlphaSearchRequest) *R
 			},
 		},
 	}
+	return info
+}
+
+// GenRelayInfoSystemOne builds the relay info for a System One decision call.
+// Unlike chat formats it carries no generative token budgeting: usage comes
+// back in the response body and is settled at response time.
+func GenRelayInfoSystemOne(c *gin.Context, request *dto.SystemOneRequest) *RelayInfo {
+	info := genBaseRelayInfo(c, request)
+	if info.RelayMode == relayconstant.RelayModeUnknown {
+		info.RelayMode = relayconstant.RelayModeSystemOne
+	}
+	info.RelayFormat = types.RelayFormatSystemOne
 	return info
 }
 

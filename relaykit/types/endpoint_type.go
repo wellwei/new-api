@@ -10,6 +10,7 @@ const (
 	EndpointTypeOpenAIResponse        EndpointType = "openai-response"
 	EndpointTypeOpenAIResponseCompact EndpointType = "openai-response-compact"
 	EndpointTypeOpenAIAlphaSearch     EndpointType = "openai-alpha-search"
+	EndpointTypeSystemOne             EndpointType = "system-one"
 	EndpointTypeAnthropic             EndpointType = "anthropic"
 	EndpointTypeGemini                EndpointType = "gemini"
 	EndpointTypeJinaRerank            EndpointType = "jina-rerank"
