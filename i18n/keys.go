@@ -41,6 +41,10 @@ const (
 	MsgAuthUserBanned            = "auth.user_banned"
 	MsgAuthInsufficientPrivilege = "auth.insufficient_privilege"
 	MsgAuthSessionRequired       = "auth.session_required"
+	MsgAuthAccessTokenExpired    = "auth.access_token_expired"
+	MsgAuthLegacyTokenRetired    = "auth.legacy_access_token_retired"
+	MsgAuthAccessTokenScope      = "auth.access_token_scope_denied"
+	MsgAuthAccessTokenLimit      = "auth.access_token_limit"
 )
 
 // Token related messages
