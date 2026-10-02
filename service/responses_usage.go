@@ -20,6 +20,7 @@ type ResponsesUsageAccumulator struct {
 	outputText     strings.Builder
 	imageCounter   relaycommon.ImageGenerationCallCounter
 	imageCommitted bool
+	hasOutput      bool
 	started        bool
 	finished       bool
 }
@@ -59,24 +60,35 @@ func (a *ResponsesUsageAccumulator) Observe(event *dto.ResponsesStreamResponse) 
 		}
 		a.imageCounter.Commit(a.info)
 		a.imageCommitted = true
-	case "response.output_text.delta", "response.function_call_arguments.delta",
-		"response.reasoning_summary_text.delta", "response.reasoning_text.delta", "response.refusal.delta":
-		// Every delta kind here is generated output that upstream bills as
-		// output tokens, so all of them feed the missing-usage estimate.
-		a.outputText.WriteString(event.Delta)
-	case dto.ResponsesOutputTypeItemDone:
-		if event.Item == nil {
-			return
-		}
-		switch event.Item.Type {
-		case dto.BuildInCallWebSearchCall, dto.BuildInCallFileSearchCall, dto.BuildInCallFunctionCall:
-			a.info.CountBillableToolCall(event.Item.Type, event.Item.Name)
-		case dto.ResponsesOutputTypeImageGenerationCall:
-			if !a.imageCommitted {
-				a.imageCounter.Observe(event.Item, event.OutputIndex)
+		case "response.output_item.added":
+			a.hasOutput = true
+		case "response.output_text.delta", "response.function_call_arguments.delta",
+			"response.reasoning_summary_text.delta", "response.reasoning_text.delta", "response.refusal.delta":
+			// Every delta kind here is generated output that upstream bills as
+			// output tokens, so all of them feed the missing-usage estimate.
+			a.hasOutput = true
+			a.outputText.WriteString(event.Delta)
+		case dto.ResponsesOutputTypeItemDone:
+			a.hasOutput = true
+			if event.Item == nil {
+				return
+			}
+			switch event.Item.Type {
+			case dto.BuildInCallWebSearchCall, dto.BuildInCallFileSearchCall, dto.BuildInCallFunctionCall:
+				a.info.CountBillableToolCall(event.Item.Type, event.Item.Name)
+			case dto.ResponsesOutputTypeImageGenerationCall:
+				if !a.imageCommitted {
+					a.imageCounter.Observe(event.Item, event.OutputIndex)
+				}
 			}
 		}
 	}
+
+func (a *ResponsesUsageAccumulator) HasOutput() bool {
+	if a == nil {
+		return false
+	}
+	return a.hasOutput || a.outputText.Len() > 0 || (a.usage != nil && a.usage.CompletionTokens > 0)
 }
 
 func (a *ResponsesUsageAccumulator) Finish() *dto.Usage {

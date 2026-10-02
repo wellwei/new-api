@@ -67,10 +67,27 @@ var accessTokenExemptRoutes = []string{
 	"GET /api/subscription/epay/return",
 	"POST /api/subscription/epay/return",
 
-	// API key authentication (TokenAuthReadOnly).
-	"GET /api/usage/token/",
-	"GET /api/log/token",
-}
+		// API key authentication (TokenAuthReadOnly).
+		"GET /api/usage/token/",
+		"GET /api/log/token",
+
+		// AI design workbench (authenticated via UserAuth/session).
+		"GET /api/design/capabilities",
+		"GET /api/design/capabilities/:id/schema",
+		"GET /api/design/projects",
+		"POST /api/design/projects",
+		"GET /api/design/projects/:id",
+		"PATCH /api/design/projects/:id",
+		"DELETE /api/design/projects/:id",
+		"POST /api/design/projects/:id/plan",
+		"POST /api/design/projects/:id/confirm",
+		"POST /api/design/projects/:id/run",
+		"POST /api/design/projects/:id/steps/:step_id/retry",
+		"POST /api/design/projects/:id/assets",
+		"GET /api/design/projects/:id/assets",
+		"PATCH /api/design/projects/:id/assets/:asset_id",
+		"GET /api/design/projects/:id/external-assets/:object_key/content",
+	}
 
 // accessTokenHelperRoutes are declared through handlePermissionRoute outside
 // channelPermissionRoutes.

@@ -380,9 +380,16 @@ func (s *ChatToResponsesStreamState) ensureCreated() []ChatToResponsesStreamEven
 	})}
 }
 
+func (s *ChatToResponsesStreamState) HasOutput() bool {
+	return s != nil && len(s.outputOrder) > 0
+}
+
 func FinalizeChatCompletionsStreamToResponses(state *ChatToResponsesStreamState) []ChatToResponsesStreamEvent {
 	if state == nil || state.finalized {
 		return nil
+	}
+	if len(state.outputOrder) == 0 {
+		return state.Fail("server_error", "upstream response completed with no output", "")
 	}
 	events := state.doneDeltaEvents()
 	state.finalized = true

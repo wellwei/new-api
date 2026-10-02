@@ -90,6 +90,7 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 			return false
 		}
+		service.ObserveResponsesOutcome(info, &event.Payload)
 		return true
 	}
 	failResponsesStream := func(err error) bool {

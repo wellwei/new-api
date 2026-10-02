@@ -78,6 +78,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	defer service.CloseResponseBodyGracefully(resp)
 
 	accumulator := service.NewResponsesUsageAccumulator(info)
+	hasSentErrorEvent := false
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -88,12 +89,80 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
+		if streamResponse.Type == "error" {
+			hasSentErrorEvent = true
+		}
 		if streamResponse.Response != nil {
 			data = string(rewriteSGLangResponsesCreatedAt(info, []byte(data), "response.created_at", streamResponse.Response.CreatedAt))
 		}
+
+		isFailedTerminal := streamResponse.Type == "response.failed" ||
+			(streamResponse.Response != nil && string(streamResponse.Response.Status) == `"failed"`)
+		if isFailedTerminal && !hasSentErrorEvent {
+			code := "server_error"
+			message := "upstream response failed"
+			if streamResponse.Code != "" {
+				code = streamResponse.Code
+			}
+			if streamResponse.Message != "" {
+				message = streamResponse.Message
+			}
+			if streamResponse.Response != nil {
+				if oaiErr := streamResponse.Response.GetOpenAIError(); oaiErr != nil {
+					if oaiErr.Code != nil {
+						code = fmt.Sprint(oaiErr.Code)
+					}
+					if oaiErr.Message != "" {
+						message = oaiErr.Message
+					}
+				}
+			}
+			errorResp := dto.ResponsesStreamResponse{
+				Type:    "error",
+				Code:    code,
+				Message: message,
+			}
+			if errorData, err := common.Marshal(errorResp); err == nil {
+				sendResponsesStreamData(c, errorResp, string(errorData))
+				accumulator.Observe(&errorResp)
+				hasSentErrorEvent = true
+			}
+		}
+
 		sendResponsesStreamData(c, streamResponse, data)
 		accumulator.Observe(&streamResponse)
 	})
+
+	outcome := info.StreamStatus.ResponseOutcome()
+	if outcome == "" && !accumulator.HasOutput() && (info.StreamStatus.EndReason == relaycommon.StreamEndReasonEOF || info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone) {
+		code := "upstream_error"
+		message := "upstream stream ended prematurely with no output"
+		errorResp := dto.ResponsesStreamResponse{
+			Type:    "error",
+			Code:    code,
+			Message: message,
+		}
+		if errorData, err := common.Marshal(errorResp); err == nil {
+			sendResponsesStreamData(c, errorResp, string(errorData))
+			accumulator.Observe(&errorResp)
+		}
+		failedResp := dto.ResponsesStreamResponse{
+			Type: "response.failed",
+			Response: &dto.OpenAIResponsesResponse{
+				Object: "response",
+				Status: []byte(`"failed"`),
+				Error: map[string]any{
+					"code":    code,
+					"message": message,
+				},
+			},
+		}
+		if failedData, err := common.Marshal(failedResp); err == nil {
+			sendResponsesStreamData(c, failedResp, string(failedData))
+			accumulator.Observe(&failedResp)
+		}
+		info.StreamStatus.MarkFailed(code, "server_error", http.StatusBadGateway)
+	}
 
 	common.SetContextKey(c, constant.ContextKeyResponseStreamStatus, info.StreamStatus)
 	info.StreamStatus.RequireTerminal()

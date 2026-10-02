@@ -77,3 +77,61 @@ func TestOaiChatToResponsesStreamHandlerUpstreamErrorFrameStopsWithError(t *test
 	require.NotEmpty(t, status.Errors[0].Message, "recorded stream error must carry the upstream message")
 	require.Contains(t, status.Errors[0].Message, "Failed to create stream")
 }
+
+func TestOaiChatToResponsesStreamHandlerEmptyStreamEmitsFailureEvents(t *testing.T) {
+	c, recorder, resp, info := newResponsesUpstreamErrorContext(t)
+	// Upstream returns 200 with only [DONE] and zero content
+	resp.Body = io.NopCloser(strings.NewReader("data: [DONE]\n\n"))
+
+	_, apiErr := OaiChatToResponsesStreamHandler(c, info, resp)
+	require.Nil(t, apiErr)
+
+	body := recorder.Body.String()
+	require.Contains(t, body, `"type":"error"`)
+	require.Contains(t, body, "upstream response completed with no output")
+	require.Contains(t, body, `"type":"response.failed"`)
+	require.NotContains(t, body, `"type":"response.completed"`)
+
+	status := info.StreamStatus
+	require.NotNil(t, status)
+	require.True(t, status.ResponseFailed())
+}
+
+func TestOaiResponsesStreamHandlerUpstreamResponseFailedSynthesizesErrorFrame(t *testing.T) {
+	c, recorder, resp, info := newResponsesUpstreamErrorContext(t)
+	upstreamFailedBody := "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"provider_unavailable\",\"message\":\"OpenRouter upstream timed out\"}}}\n\ndata: [DONE]\n\n"
+	resp.Body = io.NopCloser(strings.NewReader(upstreamFailedBody))
+
+	_, apiErr := OaiResponsesStreamHandler(c, info, resp)
+	require.Nil(t, apiErr)
+
+	body := recorder.Body.String()
+	// Must contain synthesized error frame before response.failed
+	require.Contains(t, body, "event: error\n")
+	require.Contains(t, body, `"type":"error"`)
+	require.Contains(t, body, "OpenRouter upstream timed out")
+	require.Contains(t, body, "event: response.failed\n")
+	require.Contains(t, body, `"type":"response.failed"`)
+
+	status := info.StreamStatus
+	require.NotNil(t, status)
+	require.True(t, status.ResponseFailed())
+}
+
+func TestOaiResponsesStreamHandlerEmptyStreamSynthesizesTerminalFailure(t *testing.T) {
+	c, recorder, resp, info := newResponsesUpstreamErrorContext(t)
+	resp.Body = io.NopCloser(strings.NewReader("data: [DONE]\n\n"))
+
+	_, apiErr := OaiResponsesStreamHandler(c, info, resp)
+	require.Nil(t, apiErr)
+
+	body := recorder.Body.String()
+	require.Contains(t, body, "event: error\n")
+	require.Contains(t, body, "upstream stream ended prematurely with no output")
+	require.Contains(t, body, "event: response.failed\n")
+	require.NotContains(t, body, "response.completed")
+
+	status := info.StreamStatus
+	require.NotNil(t, status)
+	require.True(t, status.ResponseFailed())
+}
